@@ -1,0 +1,50 @@
+{
+  "name": "shopify-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev:web": "next dev -p 3000",
+    "dev:koa": "tsx src/server/index.ts",
+    "dev": "concurrently -n WEB,KOA -c auto \"npm:dev:web\" \"npm:dev:koa\"",
+    "tunnel": "ngrok http http://127.0.0.1:3001",
+    "build": "next build --turbopack",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@koa/router": "^14.0.0",
+    "@prisma/client": "^6.16.0",
+    "@shopify/app-bridge": "^3.7.10",
+    "@shopify/app-bridge-react": "^4.2.2",
+    "@shopify/koa-shopify-auth": "^5.0.3",
+    "@shopify/polaris": "^13.9.5",
+    "@shopify/polaris-tokens": "^9.4.2",
+    "@shopify/shopify-api": "^11.14.1",
+    "koa": "^3.0.1",
+    "koa-bodyparser": "^4.4.1",
+    "koa-proxies": "^0.12.4",
+    "koa-session": "^7.0.2",
+    "next": "15.5.2",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
+    "@types/koa": "^3.0.0",
+    "@types/koa__router": "^12.0.4",
+    "@types/koa-bodyparser": "^4.3.12",
+    "@types/koa-session": "^6.4.5",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "concurrently": "^9.2.1",
+    "eslint": "^9",
+    "eslint-config-next": "15.5.2",
+    "prisma": "^6.16.0",
+    "tailwindcss": "^4",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}
