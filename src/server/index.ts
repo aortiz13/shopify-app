@@ -51,6 +51,10 @@ app.use(async (ctx, next) => {
 // ----------------------------------------------------
 app.use(async (ctx, next) => {
   const isNgrok = process.env.HOST?.includes("ngrok");
+<<<<<<< ours
+=======
+
+>>>>>>> theirs
   if (isNgrok && !("ngrok-skip-browser-warning" in ctx.query)) {
     const params = new URLSearchParams(ctx.querystring);
     params.set("ngrok-skip-browser-warning", "true");
@@ -58,6 +62,7 @@ app.use(async (ctx, next) => {
     ctx.redirect(`${ctx.path}?${params.toString()}`);
     return;
   }
+
   await next();
 });
 
@@ -157,7 +162,7 @@ router.get("/api/auth/callback", async (ctx) => {
 
     // Normalizar scope (puede venir undefined)
     const scope = String(
-      (sess as any).scope || process.env.SCOPES || ""
+      (sess as { scope?: string }).scope || process.env.SCOPES || ""
     );
 
     // Guardar token offline en DB
@@ -231,14 +236,19 @@ router.get("/api/products", async (ctx) => {
       body: JSON.stringify({ query }),
     });
 
-    const json: any = await resp.json();
+    type ProductsResponse = {
+      errors?: unknown;
+      data: { products: { edges: { node: unknown }[] } };
+    };
+
+    const json = (await resp.json()) as ProductsResponse;
     if (json.errors) {
       ctx.status = 500;
       ctx.body = { errors: json.errors };
       return;
     }
 
-    ctx.body = json.data.products.edges.map((e: any) => e.node);
+    ctx.body = json.data.products.edges.map((e) => e.node);
   } catch (e) {
     console.error("❌ /api/products error:", e);
     ctx.status = 500;
@@ -252,6 +262,16 @@ router.get("/api/products", async (ctx) => {
 // ----------------------------------------------------
 router.post("/api/tryon/log", async (ctx) => {
   try {
+    type TryOnLogBody = {
+      shop?: string;
+      productId?: string;
+      externalId?: string;
+      variantId?: string;
+      customerId?: string;
+      action?: string;
+      metadata?: Record<string, unknown>;
+    };
+
     const {
       shop,
       productId,
@@ -260,7 +280,7 @@ router.post("/api/tryon/log", async (ctx) => {
       customerId,
       action,
       metadata,
-    } = (ctx.request as any).body ?? {};
+    } = (ctx.request as { body?: TryOnLogBody }).body ?? {};
 
     if (!shop || !productId || !action) {
       ctx.status = 400;
