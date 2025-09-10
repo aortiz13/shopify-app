@@ -80,11 +80,7 @@ app.use(async (ctx, next) => {
 // Skip ngrok browser warning by sending the expected header
 // ----------------------------------------------------
 app.use(async (ctx, next) => {
-<<<<<<< ours
   if (process.env.HOST?.includes("ngrok")) {
-=======
-  if (ctx.host.includes("ngrok")) {
->>>>>>> theirs
     ctx.set("ngrok-skip-browser-warning", "true");
   }
 
