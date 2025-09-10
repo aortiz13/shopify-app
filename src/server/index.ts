@@ -40,9 +40,39 @@ app.use(bodyParser());
 // ----------------------------------------------------
 app.use(async (ctx, next) => {
   const isNgrok = process.env.HOST?.includes("ngrok") || process.env.NODE_ENV === "development";
-  
 
-  
+  if (isNgrok) {
+    // Desarrollo: CSP que permite assets de ngrok
+    ctx.set(
+      "Content-Security-Policy",
+      [
+        "default-src 'self' https:",
+        "img-src 'self' data: https:",
+        "style-src 'self' 'unsafe-inline' https:",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:",
+        "font-src 'self' data: https://assets.ngrok.com https://cdn.ngrok.com https:",
+        "connect-src 'self' https: wss:",
+        "frame-ancestors https://admin.shopify.com https://*.myshopify.com",
+        "frame-src https://admin.shopify.com https://*.myshopify.com"
+      ].join("; ")
+    );
+  } else {
+    // Producción: CSP más estricta
+    ctx.set(
+      "Content-Security-Policy",
+      [
+        "default-src 'self' https:",
+        "img-src 'self' data: https:",
+        "style-src 'self' 'unsafe-inline' https:",
+        "script-src 'self' https:",
+        "font-src 'self' data: https:",
+        "connect-src 'self' https: wss:",
+        "frame-ancestors https://admin.shopify.com https://*.myshopify.com",
+        "frame-src https://admin.shopify.com https://*.myshopify.com"
+      ].join("; ")
+    );
+  }
+
   await next();
 });
 
@@ -51,10 +81,7 @@ app.use(async (ctx, next) => {
 // ----------------------------------------------------
 app.use(async (ctx, next) => {
   const isNgrok = process.env.HOST?.includes("ngrok");
-<<<<<<< ours
-=======
 
->>>>>>> theirs
   if (isNgrok && !("ngrok-skip-browser-warning" in ctx.query)) {
     const params = new URLSearchParams(ctx.querystring);
     params.set("ngrok-skip-browser-warning", "true");
