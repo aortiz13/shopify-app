@@ -4,10 +4,12 @@ import { resolve } from "path";
 dotenv.config({ path: resolve(process.cwd(), ".env.local") });
 
 import Koa from "koa";
+import type { Context } from "koa";
 import Router from "@koa/router";
 import session from "koa-session";
 import bodyParser from "koa-bodyparser";
 import proxy from "koa-proxies";
+import type { IncomingMessage } from "http";
 
 import { shopify } from "./shopify";
 import {
@@ -98,12 +100,22 @@ app.use(async (ctx, next) => {
 // ----------------------------------------------------
 const NEXT_TARGET = process.env.NEXT_TARGET || "http://127.0.0.1:3000";
 
+// Fuerza CSP coherente y elimina cabeceras que impiden el embebido
+const fixProxyRes = (proxyRes: IncomingMessage, ctx: Context) => {
+  const csp = ctx.response.get("Content-Security-Policy");
+  if (csp) {
+    proxyRes.headers["content-security-policy"] = csp;
+  }
+  delete proxyRes.headers["x-frame-options"];
+};
+
 // /admin y todo lo que cuelga
 app.use(
   proxy(/^\/admin(?:\/.*)?$/, {
     target: NEXT_TARGET,
     changeOrigin: true,
     logs: true,
+    onProxyRes: fixProxyRes,
   })
 );
 // /widget (popup de PDP) y todo lo que cuelga
@@ -112,6 +124,7 @@ app.use(
     target: NEXT_TARGET,
     changeOrigin: true,
     logs: true,
+    onProxyRes: fixProxyRes,
   })
 );
 // Assets/HMR de Next
@@ -120,6 +133,7 @@ app.use(
     target: NEXT_TARGET,
     changeOrigin: true,
     logs: true,
+    onProxyRes: fixProxyRes,
   })
 );
 // Fuentes de Next 15 (Geist)
@@ -128,6 +142,7 @@ app.use(
     target: NEXT_TARGET,
     changeOrigin: true,
     logs: true,
+    onProxyRes: fixProxyRes,
   })
 );
 // Íconos (opcional)
@@ -136,6 +151,7 @@ app.use(
     target: NEXT_TARGET,
     changeOrigin: true,
     logs: true,
+    onProxyRes: fixProxyRes,
   })
 );
 
