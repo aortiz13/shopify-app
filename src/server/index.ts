@@ -77,17 +77,11 @@ app.use(async (ctx, next) => {
 });
 
 // ----------------------------------------------------
-// Forzar skip de interstitial de ngrok en desarrollo
+// Skip ngrok browser warning by sending the expected header
 // ----------------------------------------------------
 app.use(async (ctx, next) => {
-  const isNgrok = process.env.HOST?.includes("ngrok");
-
-  if (isNgrok && !("ngrok-skip-browser-warning" in ctx.query)) {
-    const params = new URLSearchParams(ctx.querystring);
-    params.set("ngrok-skip-browser-warning", "true");
-
-    ctx.redirect(`${ctx.path}?${params.toString()}`);
-    return;
+  if (process.env.HOST?.includes("ngrok")) {
+    ctx.set("ngrok-skip-browser-warning", "true");
   }
 
   await next();
