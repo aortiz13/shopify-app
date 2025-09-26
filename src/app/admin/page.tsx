@@ -3,15 +3,21 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
+type ProductImage = {
+  url?: string | null;
+  altText?: string | null;
+};
+
 type Product = {
   id: string;
   title: string;
   handle?: string;
   updatedAt?: string;
-  featuredImage?: {
-    url?: string | null;
-    altText?: string | null;
+  featuredImage?: ProductImage | null;
+  images?: {
+    edges?: Array<{ node?: ProductImage | null } | null>;
   } | null;
+  cursor?: string | null;
 };
 
 type PageInfo = {
@@ -505,8 +511,16 @@ export default function AdminLanding() {
             )}
             {!resolvingShop &&
               products.map((product) => {
-                const imageUrl = product.featuredImage?.url ?? undefined;
-                const imageAlt = product.featuredImage?.altText ?? product.title;
+                const firstGalleryImage =
+                  product.images?.edges?.find((edge) => edge?.node)?.node ?? null;
+                const preferredImage =
+                  product.featuredImage &&
+                  (product.featuredImage.url || product.featuredImage.altText)
+                    ? product.featuredImage
+                    : firstGalleryImage;
+                const imageUrl = preferredImage?.url ?? firstGalleryImage?.url ?? undefined;
+                const imageAlt =
+                  preferredImage?.altText ?? firstGalleryImage?.altText ?? product.title;
 
                 return (
                   <tr key={product.id} style={{ borderTop: "1px solid #f3f4f6" }}>

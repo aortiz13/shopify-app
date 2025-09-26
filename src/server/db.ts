@@ -1,5 +1,63 @@
 // src/server/db.ts
+import fs from "node:fs";
+import os from "node:os";
+import { basename, dirname, resolve } from "node:path";
+
 import { PrismaClient } from "@prisma/client";
+
+function ensureWritableSqliteDatabase() {
+  const url = process.env.DATABASE_URL;
+  if (!url || !url.startsWith("file:")) {
+    return;
+  }
+
+  const rawPath = url.replace(/^file:/, "");
+  if (!rawPath || rawPath === ":memory:") {
+    return;
+  }
+
+  const absolutePath = rawPath.startsWith("/") ? rawPath : resolve(process.cwd(), rawPath);
+
+  try {
+    const dir = dirname(absolutePath);
+    fs.mkdirSync(dir, { recursive: true });
+
+    if (!fs.existsSync(absolutePath)) {
+      fs.writeFileSync(absolutePath, "");
+    }
+
+    fs.accessSync(absolutePath, fs.constants.W_OK);
+    return;
+  } catch (error) {
+    console.warn("SQLite database is not writable, preparing a tmp copy.", error);
+  }
+
+  try {
+    const tmpDir = resolve(os.tmpdir(), "shopify-app-db");
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const fallbackPath = resolve(tmpDir, basename(absolutePath));
+
+    if (fs.existsSync(absolutePath)) {
+      try {
+        fs.copyFileSync(absolutePath, fallbackPath);
+      } catch (copyError) {
+        console.warn("Could not copy SQLite database, creating a blank file instead.", copyError);
+        fs.writeFileSync(fallbackPath, "");
+      }
+    } else {
+      fs.writeFileSync(fallbackPath, "");
+    }
+
+    fs.chmodSync(fallbackPath, 0o600);
+    process.env.DATABASE_URL = `file:${fallbackPath}`;
+    console.info(`Using writable SQLite database at ${fallbackPath}`);
+  } catch (fallbackError) {
+    console.error("Failed to prepare a writable SQLite database", fallbackError);
+  }
+}
+
+ensureWritableSqliteDatabase();
+
 export const prisma = new PrismaClient();
 
 // Helpers

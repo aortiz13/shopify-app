@@ -498,9 +498,20 @@ router.post("/api/tryon/save", async (ctx: Context) => {
       ctx.body = { ok: true, id: record.id, created: true };
     }
   } catch (e) {
+    const message = getErrorMessage(e);
     console.error("❌ /api/tryon/save error:", e);
+    if (message.toLowerCase().includes("readonly")) {
+      ctx.status = 500;
+      ctx.body = {
+        error: "Database is read-only",
+        detail:
+          "La base de datos de la app está en modo solo lectura. Reinicia el servidor o define DATABASE_URL hacia un directorio escribible.",
+      };
+      return;
+    }
+
     ctx.status = 500;
-    ctx.body = { error: "Internal error", detail: getErrorMessage(e) };
+    ctx.body = { error: "Internal error", detail: message };
   }
 });
 
@@ -685,6 +696,7 @@ router.get("/api/products", async (ctx: Context) => {
                 handle
                 updatedAt
                 featuredImage { url altText }
+                images(first: 1) { edges { node { url altText } } }
               }
             }
             pageInfo {
@@ -707,6 +719,7 @@ router.get("/api/products", async (ctx: Context) => {
                 handle
                 updatedAt
                 featuredImage { url altText }
+                images(first: 1) { edges { node { url altText } } }
                 variants(first: 5) { edges { node { id title sku } } }
                 metafields(first: 10, namespace: "internal") { edges { node { key value } } }
               }
@@ -750,7 +763,15 @@ router.get("/api/products", async (ctx: Context) => {
     }
 
     const edges = json.data?.products?.edges ?? [];
-    const nodes = edges.map((e: any) => e?.node ?? null).filter(Boolean);
+    const nodes = edges
+      .map((edge: any) => {
+        if (!edge?.node) return null;
+        return {
+          ...edge.node,
+          cursor: edge.cursor ?? null,
+        };
+      })
+      .filter(Boolean);
     const pageInfo = json.data?.products?.pageInfo ?? null;
 
     ctx.body = {
