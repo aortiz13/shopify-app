@@ -180,6 +180,7 @@ router.get("/proxy/widget", async (ctx) => {
     ].join("; ");
     ctx.set("Content-Security-Policy", csp);
     ctx.remove("X-Frame-Options");
+    ctx.set("Access-Control-Allow-Origin", "*");
 
     ctx.status = upstream.status;
     ctx.body = await upstream.text(); // devolvemos el HTML
