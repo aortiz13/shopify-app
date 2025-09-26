@@ -36,6 +36,81 @@ const getErrorMessage = (err: unknown): string => {
   return typeof err === "string" ? err : "Error inesperado";
 };
 
+const decodeHostShop = (hostParam: string): string | null => {
+  try {
+    const normalized = hostParam.replace(/-/g, "+").replace(/_/g, "/");
+    const padding = normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
+    const decoded = window.atob(`${normalized}${padding}`);
+
+    const directDomain = decoded.match(/([\w-]+\.myshopify\.com)/);
+    if (directDomain?.[1]) {
+      return directDomain[1];
+    }
+
+    const storeSegment = decoded.match(/\/store\/([^/]+)/);
+    if (storeSegment?.[1]) {
+      const slug = storeSegment[1];
+      return slug.endsWith(".myshopify.com") ? slug : `${slug}.myshopify.com`;
+    }
+
+    const legacySegment = decoded.match(/\/([^/]+)\/app\//);
+    if (legacySegment?.[1]) {
+      const slug = legacySegment[1];
+      return slug.endsWith(".myshopify.com") ? slug : `${slug}.myshopify.com`;
+    }
+  } catch (error) {
+    console.warn("No se pudo decodificar el parámetro host", error);
+  }
+
+  return null;
+};
+
+const resolveShopFromLocation = (): string => {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const parseShop = (search: string | undefined | null): string => {
+    if (!search) {
+      return "";
+    }
+
+    const params = new URLSearchParams(search);
+    const direct = params.get("shop");
+    if (direct) {
+      return direct;
+    }
+
+    const host = params.get("host");
+    if (host) {
+      const fromHost = decodeHostShop(host);
+      if (fromHost) {
+        return fromHost;
+      }
+    }
+
+    return "";
+  };
+
+  const current = parseShop(window.location.search);
+  if (current) {
+    return current;
+  }
+
+  try {
+    if (window.top && window.top !== window) {
+      const fromTop = parseShop(window.top.location.search);
+      if (fromTop) {
+        return fromTop;
+      }
+    }
+  } catch (error) {
+    console.warn("No se pudo acceder a window.top.location", error);
+  }
+
+  return "";
+};
+
 export default function AdminLanding() {
   const [products, setProducts] = useState<Product[]>([]);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
@@ -46,14 +121,23 @@ export default function AdminLanding() {
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [pageInfo, setPageInfo] = useState<PageInfo | null>(null);
   const [page, setPage] = useState(1);
+  const [shop, setShop] = useState<string>("");
 
-  const shop =
-    typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search).get("shop") || ""
-      : "";
+  useEffect(() => {
+    const resolved = resolveShopFromLocation();
+    if (resolved) {
+      setShop(resolved);
+    } else {
+      setError("No se pudo determinar la tienda. Reabre la app desde Shopify.");
+    }
+  }, []);
 
   const loadProducts = useCallback(
     async (params?: { cursor?: string | null; direction?: "next" | "prev" }) => {
+      if (!shop) {
+        return;
+      }
+
       const direction = params?.direction ?? "next";
       const cursor = params?.cursor ?? undefined;
 
@@ -125,8 +209,10 @@ export default function AdminLanding() {
   );
 
   useEffect(() => {
-    loadProducts();
-  }, [loadProducts]);
+    if (shop) {
+      loadProducts();
+    }
+  }, [loadProducts, shop]);
 
   const toggleProduct = (id: string) => {
     setSelected((prevSelected) => {
@@ -177,6 +263,11 @@ export default function AdminLanding() {
   );
 
   const handleSave = async () => {
+    if (!shop) {
+      setError("No se pudo determinar la tienda. Reabre la app desde Shopify.");
+      return;
+    }
+
     setSaving(true);
     setSavedMessage(null);
     setError(null);
