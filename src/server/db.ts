@@ -107,7 +107,9 @@ export async function getShopByAdminHost(adminHost: string) {
 export async function rememberAdminHost(params: { shop: string; adminHost: string }) {
   const { shop, adminHost } = params;
   try {
-    const data: Prisma.ShopSessionUpdateInput = { adminHost };
+    const data = Prisma.validator<Prisma.ShopSessionUpdateInput>()({
+      adminHost: { set: adminHost },
+    });
 
     await prisma.shopSession.update({
       where: { shop },
