@@ -103,61 +103,196 @@ export default function AdminLanding() {
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [hasSavedSelection, setHasSavedSelection] = useState(false);
+  const [shop, setShop] = useState<string>("");
+  const [adminHost, setAdminHost] = useState<string>("");
+  const [pageInfo, setPageInfo] = useState<PageInfo | null>(null);
+  const [page, setPage] = useState(1);
+  const [resolvingShop, setResolvingShop] = useState(true);
 
-  const shop =
-    typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search).get("shop") || ""
-      : "";
+  useEffect(() => {
+    if (typeof window === "undefined") return;
 
-  const loadProducts = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setSavedMessage(null);
+    setResolvingShop(true);
 
-    try {
-      const [productsResp, selectionResp] = await Promise.all([
-        fetch(`/api/products?shop=${encodeURIComponent(shop)}`),
-        fetch(`/api/tryon/selection?shop=${encodeURIComponent(shop)}`),
-      ]);
+    const params = new URLSearchParams(window.location.search);
+    const shopParam = params.get("shop") ?? "";
+    const hostParam = params.get("host") ?? "";
 
-      if (!productsResp.ok) {
-        const txt = await productsResp.text();
-        throw new Error(txt || `HTTP ${productsResp.status}`);
+    setAdminHost(hostParam);
+
+    const finalizeShop = (value: string) => {
+      setShop(value);
+      setPage(1);
+      setPageInfo(null);
+      setError(null);
+      if (hostParam && value) {
+        rememberShopForHost(hostParam, value);
+      }
+      setResolvingShop(false);
+    };
+
+    if (shopParam) {
+      finalizeShop(shopParam);
+      return;
+    }
+
+    if (hostParam) {
+      const stored = getStoredShopForHost(hostParam);
+      if (stored) {
+        finalizeShop(stored);
+        return;
       }
 
-      const productsJson = await productsResp.json();
-      setProducts(Array.isArray(productsJson) ? productsJson : []);
+      const decoded = decodeHostShop(hostParam);
+      if (decoded) {
+        finalizeShop(decoded);
+        return;
+      }
+    }
 
-      if (selectionResp.ok) {
-        const selectionJson = await selectionResp.json();
-        const savedProducts = Array.isArray(selectionJson?.products)
-          ? selectionJson.products
+    setResolvingShop(false);
+    setError((prev) => prev ?? "No se pudo determinar la tienda. Reabre la app desde Shopify.");
+  }, []);
+
+  const loadProducts = useCallback(
+    async (options: { cursor?: string; direction?: "next" | "prev" } = {}) => {
+      if (!shop) {
+        setError("No se pudo determinar la tienda. Reabre la app desde Shopify.");
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+      setSavedMessage(null);
+
+      const direction: "next" | "prev" = options.direction ?? "next";
+      const productParams = new URLSearchParams({ shop });
+
+      if (adminHost) {
+        productParams.set("host", adminHost);
+      }
+
+      if (options.cursor) {
+        productParams.set("cursor", options.cursor);
+      }
+
+      if (direction) {
+        productParams.set("direction", direction);
+      }
+
+      const selectionParams = new URLSearchParams({ shop });
+      if (adminHost) {
+        selectionParams.set("host", adminHost);
+      }
+
+      let savedProducts: Array<{ id?: string | null }> = [];
+      let selectionApplied = false;
+
+      try {
+        const [productsResp, selectionResp] = await Promise.all([
+          fetch(`/api/products?${productParams.toString()}`),
+          fetch(`/api/tryon/selection?${selectionParams.toString()}`),
+        ]);
+
+        if (!productsResp.ok) {
+          const txt = await productsResp.text();
+          throw new Error(txt || `HTTP ${productsResp.status}`);
+        }
+
+        const productsJson = await productsResp.json();
+        const productList = Array.isArray(productsJson?.products)
+          ? productsJson.products
+          : Array.isArray(productsJson)
+          ? productsJson
           : [];
 
-        if (savedProducts.length > 0) {
-          const map: Record<string, boolean> = {};
-          savedProducts.forEach((product: { id?: string | null }) => {
-            if (product?.id) {
-              map[product.id] = true;
+        setProducts(productList);
+
+        const pageInfoData = productsJson?.pageInfo;
+        if (pageInfoData && typeof pageInfoData === "object") {
+          setPageInfo({
+            hasNextPage: Boolean(pageInfoData.hasNextPage),
+            hasPreviousPage: Boolean(pageInfoData.hasPreviousPage),
+            startCursor: pageInfoData.startCursor ?? null,
+            endCursor: pageInfoData.endCursor ?? null,
+          });
+        } else {
+          setPageInfo(null);
+        }
+
+        const resolvedDirection =
+          typeof productsJson?.direction === "string" &&
+          (productsJson.direction === "prev" || productsJson.direction === "next")
+            ? (productsJson.direction as "prev" | "next")
+            : direction;
+
+        if (options.cursor) {
+          setPage((prev) => (resolvedDirection === "prev" ? Math.max(1, prev - 1) : prev + 1));
+        }
+
+        if (selectionResp.ok) {
+          const selectionJson = await selectionResp.json();
+          savedProducts = Array.isArray(selectionJson?.products)
+            ? selectionJson.products
+            : [];
+
+          if (savedProducts.length > 0) {
+            const map: Record<string, boolean> = {};
+            savedProducts.forEach((product: { id?: string | null }) => {
+              if (product?.id) {
+                map[product.id] = true;
+              }
+            });
+            setSelected(map);
+            setHasSavedSelection(true);
+          } else {
+            setSelected({});
+            setHasSavedSelection(false);
+          }
+          selectionApplied = true;
+        } else if (selectionResp.status !== 404) {
+          const txt = await selectionResp.text();
+          throw new Error(txt || `HTTP ${selectionResp.status}`);
+        }
+
+        setSelectedDetails((prevDetails) => {
+          if (selectionApplied && savedProducts.length > 0) {
+            const ids = new Set(
+              savedProducts
+                .map((product) => product.id)
+                .filter((id): id is string => Boolean(id))
+            );
+
+            const details: Record<string, Product> = {};
+            productList.forEach((product: Product) => {
+              if (ids.has(product.id)) {
+                details[product.id] = product;
+              }
+            });
+            return details;
+          }
+
+          if (selectionApplied && savedProducts.length === 0) {
+            return {};
+          }
+
+          const retained: Record<string, Product> = {};
+          productList.forEach((product: Product) => {
+            if (prevDetails[product.id]) {
+              retained[product.id] = product;
             }
           });
-          setSelected(map);
-          setHasSavedSelection(true);
-        } else {
-          setSelected({});
-          setHasSavedSelection(false);
-        }
-      } else if (selectionResp.status !== 404) {
-        const txt = await selectionResp.text();
-        throw new Error(txt || `HTTP ${selectionResp.status}`);
+          return retained;
+        });
+      } catch (err: any) {
+        console.error("Error loading products", err);
+        setError(err?.message ? String(err.message) : "Error inesperado");
+      } finally {
+        setLoading(false);
       }
-    } catch (err: any) {
-      console.error("Error loading products", err);
-      setError(err?.message ? String(err.message) : "Error inesperado");
-    } finally {
-      setLoading(false);
-    }
-  }, [shop]);
+    },
+    [adminHost, shop]
+  );
 
   useEffect(() => {
     if (!resolvingShop && shop) {
@@ -227,14 +362,23 @@ export default function AdminLanding() {
 
     try {
       const chosen = Object.values(selectedDetails);
+      const payload: {
+        shop: string;
+        products: Array<{ id: string; title?: string; handle?: string }>;
+        host?: string;
+      } = {
+        shop,
+        products: chosen.map(({ id, title, handle }) => ({ id, title, handle })),
+      };
+
+      if (adminHost) {
+        payload.host = adminHost;
+      }
+
       const resp = await fetch("/api/tryon/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          shop,
-          host: adminHost,
-          products: chosen.map(({ id, title, handle }) => ({ id, title, handle })),
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!resp.ok) {
