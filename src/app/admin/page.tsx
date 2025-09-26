@@ -8,6 +8,10 @@ type Product = {
   title: string;
   handle?: string;
   updatedAt?: string;
+  featuredImage?: {
+    url?: string | null;
+    altText?: string | null;
+  } | null;
 };
 
 export default function AdminLanding() {
@@ -155,41 +159,57 @@ export default function AdminLanding() {
           <thead style={{ background: "#f9fafb", textTransform: "uppercase", fontSize: 12, letterSpacing: 0.4 }}>
             <tr>
               <th style={thStyle}> </th>
-              <th style={thStyle}>Título</th>
-              <th style={thStyle}>Handle</th>
-              <th style={thStyle}>Actualizado</th>
+              <th style={thStyle}>Producto</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={4} style={tdStyle}>
+                <td colSpan={2} style={tdStyle}>
                   Cargando productos…
                 </td>
               </tr>
             )}
             {!loading && products.length === 0 && (
               <tr>
-                <td colSpan={4} style={tdStyle}>
+                <td colSpan={2} style={tdStyle}>
                   No se encontraron productos.
                 </td>
               </tr>
             )}
-            {products.map((product) => (
-              <tr key={product.id} style={{ borderTop: "1px solid #f3f4f6" }}>
-                <td style={tdStyle}>
-                  <input
-                    type="checkbox"
-                    checked={!!selected[product.id]}
-                    onChange={() => toggleProduct(product.id)}
-                    disabled={loading}
-                  />
-                </td>
-                <td style={tdStyle}>{product.title}</td>
-                <td style={tdStyle}>{product.handle ?? "-"}</td>
-                <td style={tdStyle}>{product.updatedAt ? new Date(product.updatedAt).toLocaleString() : "-"}</td>
-              </tr>
-            ))}
+            {products.map((product) => {
+              const imageUrl = product.featuredImage?.url ?? undefined;
+              const imageAlt = product.featuredImage?.altText ?? product.title;
+
+              return (
+                <tr key={product.id} style={{ borderTop: "1px solid #f3f4f6" }}>
+                  <td style={tdStyle}>
+                    <input
+                      type="checkbox"
+                      checked={!!selected[product.id]}
+                      onChange={() => toggleProduct(product.id)}
+                      disabled={loading}
+                    />
+                  </td>
+                  <td style={productCellStyle}>
+                    <div style={imageWrapperStyle}>
+                      {imageUrl ? (
+                        <img
+                          src={imageUrl}
+                          alt={imageAlt}
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        />
+                      ) : (
+                        <div style={placeholderStyle} aria-hidden="true">
+                          <span style={{ fontSize: 12, color: "#9ca3af" }}>Sin imagen</span>
+                        </div>
+                      )}
+                    </div>
+                    <span style={{ fontWeight: 600, color: "#111827" }}>{product.title}</span>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -247,4 +267,32 @@ const tdStyle: React.CSSProperties = {
   padding: "12px 16px",
   fontSize: 14,
   color: "#111827",
+};
+
+const productCellStyle: React.CSSProperties = {
+  ...tdStyle,
+  display: "flex",
+  alignItems: "center",
+  gap: 16,
+};
+
+const imageWrapperStyle: React.CSSProperties = {
+  width: 56,
+  height: 56,
+  borderRadius: 12,
+  overflow: "hidden",
+  background: "#f3f4f6",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  flexShrink: 0,
+};
+
+const placeholderStyle: React.CSSProperties = {
+  width: "100%",
+  height: "100%",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "#f9fafb",
 };

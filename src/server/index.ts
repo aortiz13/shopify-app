@@ -408,7 +408,15 @@ router.get("/api/products", async (ctx) => {
       ? `
         query {
           products(first: 10, sortKey: UPDATED_AT, reverse: true) {
-            edges { node { id title handle updatedAt } }
+            edges {
+              node {
+                id
+                title
+                handle
+                updatedAt
+                featuredImage { url altText }
+              }
+            }
           }
         }
       `
@@ -421,6 +429,7 @@ router.get("/api/products", async (ctx) => {
                 title
                 handle
                 updatedAt
+                featuredImage { url altText }
                 variants(first: 5) { edges { node { id title sku } } }
                 metafields(first: 10, namespace: "internal") { edges { node { key value } } }
               }
