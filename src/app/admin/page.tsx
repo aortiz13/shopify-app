@@ -21,6 +21,21 @@ type PageInfo = {
   endCursor: string | null;
 };
 
+const getErrorMessage = (err: unknown): string => {
+  if (err instanceof Error && err.message) {
+    return err.message;
+  }
+
+  if (err && typeof err === "object" && "message" in err) {
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === "string") {
+      return message;
+    }
+  }
+
+  return typeof err === "string" ? err : "Error inesperado";
+};
+
 export default function AdminLanding() {
   const [products, setProducts] = useState<Product[]>([]);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
@@ -99,9 +114,9 @@ export default function AdminLanding() {
           }
           return 1;
         });
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Error loading products", err);
-        setError(err?.message ? String(err.message) : "Error inesperado");
+        setError(getErrorMessage(err));
       } finally {
         setLoading(false);
       }
@@ -183,9 +198,10 @@ export default function AdminLanding() {
       }
 
       setSavedMessage(`Guardados ${chosen.length} productos.`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error saving selection", err);
-      setError(err?.message ? String(err.message) : "Error guardando selección");
+      const message = getErrorMessage(err) || "Error guardando selección";
+      setError(message);
     } finally {
       setSaving(false);
     }
@@ -357,10 +373,17 @@ export default function AdminLanding() {
       </footer>
 
       {savedMessage && (
-        <div style={{ background: "#dcfce7", color: "#166534", padding: "12px 16px", borderRadius: 8 }}>
+        <div
+          style={{
+            background: "#dcfce7",
+            color: "#166534",
+            padding: "12px 16px",
+            borderRadius: 8,
+          }}
+        >
           {savedMessage}
         </div>
-      </section>
+      )}
     </div>
   );
 }

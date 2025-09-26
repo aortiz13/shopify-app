@@ -1,6 +1,7 @@
 // src/server/index.ts
 import * as dotenv from "dotenv";
 import { resolve } from "path";
+import process from "node:process";
 dotenv.config({ path: resolve(process.cwd(), ".env.local") });
 
 import Koa from "koa";
@@ -147,11 +148,26 @@ function copyUpstreamHeaders(resp: Response, ctx: Context) {
   });
 }
 
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error && typeof err.message === "string") {
+    return err.message;
+  }
+
+  if (err && typeof err === "object" && "message" in err) {
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === "string") {
+      return message;
+    }
+  }
+
+  return typeof err === "string" ? err : String(err);
+}
+
 // ---------------------------------------------------------------------
 // App Proxy: Shopify -> /apps/tryon/widget  →  Tu host -> /proxy/widget
 // Aquí NO usamos koa-proxies para evitar "Http response closed while proxying"
 // ---------------------------------------------------------------------
-router.get("/proxy/widget", async (ctx) => {
+router.get("/proxy/widget", async (ctx: Context) => {
   try {
     const qs = ctx.querystring ? `?${ctx.querystring}` : "";
     const upstreamUrl = `${NEXT_TARGET}/widget${qs}`;
@@ -164,7 +180,7 @@ router.get("/proxy/widget", async (ctx) => {
     });
 
     // Copiamos headers útiles del upstream y sobreescribimos lo necesario
-    copyUpstreamHeaders(upstream as unknown as Response, ctx);
+    copyUpstreamHeaders(upstream, ctx);
 
     // CSP válida para storefront/admin
     const isDev = process.env.NODE_ENV !== "production";
@@ -187,14 +203,14 @@ router.get("/proxy/widget", async (ctx) => {
     ctx.set("Access-Control-Allow-Credentials", "true");
     ctx.status = upstream.status;
     ctx.body = await upstream.text(); // devolvemos el HTML
-  } catch (e) {
+  } catch (e: unknown) {
     console.error("❌ /proxy/widget error:", e);
     ctx.status = 502;
     ctx.body = "Proxy error";
   }
 });
 
-router.get("/proxy/picker", async (ctx) => {
+router.get("/proxy/picker", async (ctx: Context) => {
   try {
     const qs = ctx.querystring ? `?${ctx.querystring}` : "";
     const upstreamUrl = `${NEXT_TARGET}/picker${qs}`;
@@ -206,7 +222,7 @@ router.get("/proxy/picker", async (ctx) => {
       },
     });
 
-    copyUpstreamHeaders(upstream as unknown as Response, ctx);
+    copyUpstreamHeaders(upstream, ctx);
 
     const isDev = process.env.NODE_ENV !== "production";
     const scriptSrc = isDev ? "'unsafe-inline' 'unsafe-eval' https:" : "https:";
@@ -228,7 +244,7 @@ router.get("/proxy/picker", async (ctx) => {
     ctx.set("Access-Control-Allow-Credentials", "true");
     ctx.status = upstream.status;
     ctx.body = await upstream.text();
-  } catch (e) {
+  } catch (e: unknown) {
     console.error("❌ /proxy/picker error:", e);
     ctx.status = 502;
     ctx.body = "Proxy error";
@@ -239,17 +255,17 @@ router.get("/proxy/picker", async (ctx) => {
 // ----------------------------------------------------
 // Rutas utilitarias
 // ----------------------------------------------------
-router.get("/health", (ctx) => {
+router.get("/health", (ctx: Context) => {
   ctx.body = "ok";
 });
 
 // Evitar 404 al abrir raíz del túnel
-router.get("/", (ctx) => ctx.redirect("/admin"));
+router.get("/", (ctx: Context) => ctx.redirect("/admin"));
 
 // ----------------------------------------------------
 // OAuth Shopify
 // ----------------------------------------------------
-router.get("/api/auth", async (ctx) => {
+router.get("/api/auth", async (ctx: Context) => {
   const shop = (ctx.query.shop as string)?.trim();
   if (!shop) {
     ctx.status = 400;
@@ -269,24 +285,38 @@ router.get("/api/auth", async (ctx) => {
   ctx.respond = false;
 });
 
-router.get("/api/auth/callback", async (ctx) => {
+router.get("/api/auth/callback", async (ctx: Context) => {
   try {
     const result = await shopify.auth.callback({
       rawRequest: ctx.req,
       rawResponse: ctx.res,
     });
 
-    const sess = result.session;
+    type ShopifySession = {
+      shop: string;
+      accessToken?: string;
+      isOnline?: boolean;
+      scope?: string;
+    };
+
+    const sess = result.session as ShopifySession | undefined;
+
+    if (!sess?.shop) {
+      throw new Error("Missing shop in Shopify session");
+    }
 
     // Normalizar scope (puede venir undefined)
     const scope = String(
-      (sess as { scope?: string }).scope || process.env.SCOPES || "",
+      sess.scope || process.env.SCOPES || "",
     );
+
+    if (!sess.accessToken) {
+      throw new Error("Missing access token in Shopify session");
+    }
 
     // Guardar token offline en DB
     await saveShopSession({
       shop: sess.shop,
-      // @ts-expect-error: en v11 accessToken está en la sesión
       accessToken: sess.accessToken,
       scope,
       isOnline: !!sess.isOnline,
@@ -300,7 +330,7 @@ router.get("/api/auth/callback", async (ctx) => {
 
     // Tras OAuth, redirigir al dashboard embebido
     ctx.redirect(`/admin?shop=${encodeURIComponent(sess.shop)}`);
-  } catch (err) {
+  } catch (err: unknown) {
     console.error("❌ Error en callback OAuth:", err);
     ctx.status = 500;
     ctx.body = "OAuth error";
@@ -310,7 +340,7 @@ router.get("/api/auth/callback", async (ctx) => {
 // API: Logging del probador virtual
 // POST /api/tryon/log   { shop, productId, action, ... }
 // ----------------------------------------------------
-router.post("/api/tryon/log", async (ctx) => {
+router.post("/api/tryon/log", async (ctx: Context) => {
   try {
     type TryOnLogBody = {
       shop?: string;
@@ -343,14 +373,14 @@ router.post("/api/tryon/log", async (ctx) => {
     });
 
     ctx.body = { ok: true, id: log.id };
-  } catch (e) {
+  } catch (e: unknown) {
     console.error("❌ /api/tryon/log error:", e);
     ctx.status = 500;
-    ctx.body = { error: "Internal error" };
+    ctx.body = { error: "Internal error", detail: getErrorMessage(e) };
   }
 });
 // POST /api/tryon/save
-router.post("/api/tryon/save", async (ctx) => {
+router.post("/api/tryon/save", async (ctx: Context) => {
   try {
     const body = ctx.request.body as {
       shop?: string;
@@ -388,14 +418,14 @@ router.post("/api/tryon/save", async (ctx) => {
 
       ctx.body = { ok: true, id: record.id, created: true };
     }
-  } catch (e) {
+  } catch (e: unknown) {
     console.error("❌ /api/tryon/save error:", e);
     ctx.status = 500;
-    ctx.body = { error: "Internal error", detail: String(e?.message ?? e) };
+    ctx.body = { error: "Internal error", detail: getErrorMessage(e) };
   }
 });
 
-router.get("/api/tryon/selection", async (ctx) => {
+router.get("/api/tryon/selection", async (ctx: Context) => {
   const shop = String(ctx.query.shop ?? "").trim();
 
   if (!shop) {
@@ -418,15 +448,15 @@ router.get("/api/tryon/selection", async (ctx) => {
     try {
       const parsed = JSON.parse(existing.productsJson ?? "[]");
       ctx.body = { shop, products: Array.isArray(parsed) ? parsed : [] };
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("❌ /api/tryon/selection parse error:", err);
       ctx.status = 500;
       ctx.body = { error: "Invalid stored selection" };
     }
-  } catch (e) {
+  } catch (e: unknown) {
     console.error("❌ /api/tryon/selection error:", e);
     ctx.status = 500;
-    ctx.body = { error: "Internal error", detail: String(e?.message ?? e) };
+    ctx.body = { error: "Internal error", detail: getErrorMessage(e) };
   }
 });
 
@@ -434,7 +464,7 @@ router.get("/api/tryon/selection", async (ctx) => {
 // API: Productos (Admin GraphQL real) con logs detallados
 // GET /api/products?shop=<shop.myshopify.com>[&debug=1]
 // ----------------------------------------------------
-router.get("/api/products", async (ctx) => {
+router.get("/api/products", async (ctx: Context) => {
   const shop = String(ctx.query.shop ?? "").trim();
   if (!shop) {
     ctx.status = 400;
@@ -574,10 +604,10 @@ router.get("/api/products", async (ctx) => {
       limit,
       direction,
     };
-  } catch (e: any) {
-    console.error("❌ /api/products exception:", e?.message || e);
+  } catch (e: unknown) {
+    console.error("❌ /api/products exception:", e);
     ctx.status = 500;
-    ctx.body = { error: "Internal error", detail: String(e?.message || e) };
+    ctx.body = { error: "Internal error", detail: getErrorMessage(e) };
   }
 });
 
