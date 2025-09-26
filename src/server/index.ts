@@ -463,22 +463,15 @@ router.post("/api/tryon/save", async (ctx: Context) => {
   try {
     const body = ctx.request.body as {
       shop?: string;
-      host?: string;
       products?: Array<{ id: string; title?: string; handle?: string }>;
     };
-    const hostParam = body.host ?? ctx.query.host;
-    const resolution = await resolveShopFromParams({ shop: body.shop, host: hostParam });
-    const shop = resolution.shop;
+    const shop = body.shop ?? String(ctx.query.shop ?? "");
     const products = Array.isArray(body.products) ? body.products : [];
 
     if (!shop || products.length === 0) {
       ctx.status = 400;
       ctx.body = { error: "shop and products are required" };
       return;
-    }
-
-    if (resolution.from) {
-      await persistAdminHostIfNeeded(shop, resolution.host ?? (typeof hostParam === "string" ? hostParam : undefined));
     }
 
     const serialized = JSON.stringify(products);
@@ -504,7 +497,7 @@ router.post("/api/tryon/save", async (ctx: Context) => {
 
       ctx.body = { ok: true, id: record.id, created: true };
     }
-  } catch (e: unknown) {
+  } catch (e) {
     console.error("❌ /api/tryon/save error:", e);
     ctx.status = 500;
     ctx.body = { error: "Internal error", detail: getErrorMessage(e) };
@@ -552,6 +545,76 @@ router.get("/api/tryon/selection", async (ctx: Context) => {
     console.error("❌ /api/tryon/selection error:", e);
     ctx.status = 500;
     ctx.body = { error: "Internal error", detail: getErrorMessage(e) };
+  }
+});
+
+router.get("/api/tryon/selection", async (ctx) => {
+  const shop = String(ctx.query.shop ?? "").trim();
+
+  if (!shop) {
+    ctx.status = 400;
+    ctx.body = { error: "Missing shop" };
+    return;
+  }
+
+  try {
+    const existing = await prisma.tryOnSelection.findFirst({
+      where: { shop },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (!existing) {
+      ctx.body = { shop, products: [] };
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(existing.productsJson ?? "[]");
+      ctx.body = { shop, products: Array.isArray(parsed) ? parsed : [] };
+    } catch (err) {
+      console.error("❌ /api/tryon/selection parse error:", err);
+      ctx.status = 500;
+      ctx.body = { error: "Invalid stored selection" };
+    }
+  } catch (e) {
+    console.error("❌ /api/tryon/selection error:", e);
+    ctx.status = 500;
+    ctx.body = { error: "Internal error", detail: String(e?.message ?? e) };
+  }
+});
+
+router.get("/api/tryon/selection", async (ctx) => {
+  const shop = String(ctx.query.shop ?? "").trim();
+
+  if (!shop) {
+    ctx.status = 400;
+    ctx.body = { error: "Missing shop" };
+    return;
+  }
+
+  try {
+    const existing = await prisma.tryOnSelection.findFirst({
+      where: { shop },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (!existing) {
+      ctx.body = { shop, products: [] };
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(existing.productsJson ?? "[]");
+      ctx.body = { shop, products: Array.isArray(parsed) ? parsed : [] };
+    } catch (err) {
+      console.error("❌ /api/tryon/selection parse error:", err);
+      ctx.status = 500;
+      ctx.body = { error: "Invalid stored selection" };
+    }
+  } catch (e) {
+    console.error("❌ /api/tryon/selection error:", e);
+    ctx.status = 500;
+    ctx.body = { error: "Internal error", detail: String(e?.message ?? e) };
   }
 });
 

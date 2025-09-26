@@ -102,196 +102,62 @@ export default function AdminLanding() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
-  const [pageInfo, setPageInfo] = useState<PageInfo | null>(null);
-  const [page, setPage] = useState(1);
-  const [shop, setShop] = useState<string>("");
-  const [adminHost, setAdminHost] = useState<string>("");
-  const [resolvingShop, setResolvingShop] = useState(true);
+  const [hasSavedSelection, setHasSavedSelection] = useState(false);
 
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      setResolvingShop(false);
-      return;
-    }
+  const shop =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("shop") || ""
+      : "";
 
-    let cancelled = false;
-    setResolvingShop(true);
+  const loadProducts = useCallback(async () => {
+    setLoading(true);
     setError(null);
+    setSavedMessage(null);
 
-    const params = new URLSearchParams(window.location.search);
-    const shopParam = params.get("shop")?.trim() ?? "";
-    const hostParam = params.get("host")?.trim() ?? "";
+    try {
+      const [productsResp, selectionResp] = await Promise.all([
+        fetch(`/api/products?shop=${encodeURIComponent(shop)}`),
+        fetch(`/api/tryon/selection?shop=${encodeURIComponent(shop)}`),
+      ]);
 
-    if (hostParam) {
-      setAdminHost(hostParam);
-    }
-
-    const complete = (
-      resolvedShop: string | null,
-      options?: { remember?: boolean; silentError?: boolean },
-    ) => {
-      if (cancelled) return;
-
-      const shouldRemember = options?.remember ?? true;
-      const silentError = options?.silentError ?? false;
-
-      if (resolvedShop) {
-        setShop(resolvedShop);
-        setError(null);
-        if (hostParam && shouldRemember) {
-          rememberShopForHost(hostParam, resolvedShop);
-        }
-      } else if (!silentError) {
-        setShop("");
-        setError("No se pudo determinar la tienda. Reabre la app desde Shopify.");
+      if (!productsResp.ok) {
+        const txt = await productsResp.text();
+        throw new Error(txt || `HTTP ${productsResp.status}`);
       }
 
-      setResolvingShop(false);
-    };
+      const productsJson = await productsResp.json();
+      setProducts(Array.isArray(productsJson) ? productsJson : []);
 
-    if (shopParam) {
-      complete(shopParam);
-      return () => {
-        cancelled = true;
-      };
-    }
+      if (selectionResp.ok) {
+        const selectionJson = await selectionResp.json();
+        const savedProducts = Array.isArray(selectionJson?.products)
+          ? selectionJson.products
+          : [];
 
-    if (hostParam) {
-      const stored = getStoredShopForHost(hostParam);
-      if (stored) {
-        complete(stored);
-        return () => {
-          cancelled = true;
-        };
-      }
-
-      const decoded = decodeHostShop(hostParam);
-      if (decoded) {
-        complete(decoded);
-        return () => {
-          cancelled = true;
-        };
-      }
-
-      (async () => {
-        try {
-          const resp = await fetch(`/api/session/resolve-shop?host=${encodeURIComponent(hostParam)}`);
-          if (!resp.ok) {
-            complete(null, { remember: false });
-            return;
-          }
-
-          const data = await resp.json();
-          const resolved = typeof data?.shop === "string" ? data.shop : "";
-          if (resolved) {
-            complete(resolved);
-            return;
-          }
-
-          complete(null, { remember: false });
-        } catch (err) {
-          console.error("Error resolviendo la tienda desde host", err);
-          complete(null, { remember: false });
-        }
-      })();
-
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    complete(null, { remember: false });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const loadProducts = useCallback(
-    async (params?: { cursor?: string | null; direction?: "next" | "prev" }) => {
-      if (!shop) {
-        return;
-      }
-
-      const direction = params?.direction ?? "next";
-      const cursor = params?.cursor ?? undefined;
-
-      const qs = new URLSearchParams();
-      qs.set("shop", shop);
-      if (adminHost) {
-        qs.set("host", adminHost);
-      }
-      if (cursor) {
-        qs.set("cursor", cursor);
-      }
-      if (direction === "prev") {
-        qs.set("direction", "prev");
-      }
-
-      setLoading(true);
-      setError(null);
-      setSavedMessage(null);
-
-      try {
-        const resp = await fetch(`/api/products?${qs.toString()}`);
-        if (!resp.ok) {
-          const txt = await resp.text();
-          throw new Error(txt || `HTTP ${resp.status}`);
-        }
-        const data = await resp.json();
-        const resolvedShop = typeof data?.shop === "string" ? data.shop : "";
-        if (resolvedShop && resolvedShop !== shop) {
-          setShop(resolvedShop);
-          if (adminHost) {
-            rememberShopForHost(adminHost, resolvedShop);
-          }
-        }
-        const items = Array.isArray(data?.products) ? data.products : [];
-        setProducts(items);
-
-        if (items.length > 0) {
-          setSelectedDetails((prev) => {
-            const updates: Record<string, Product> = {};
-            items.forEach((product: Product) => {
-              if (prev[product.id]) {
-                updates[product.id] = product;
-              }
-            });
-            return Object.keys(updates).length > 0 ? { ...prev, ...updates } : prev;
+        if (savedProducts.length > 0) {
+          const map: Record<string, boolean> = {};
+          savedProducts.forEach((product: { id?: string | null }) => {
+            if (product?.id) {
+              map[product.id] = true;
+            }
           });
-        }
-
-        if (data?.pageInfo && typeof data.pageInfo === "object") {
-          setPageInfo({
-            hasNextPage: Boolean(data.pageInfo.hasNextPage),
-            hasPreviousPage: Boolean(data.pageInfo.hasPreviousPage),
-            startCursor: data.pageInfo.startCursor ?? null,
-            endCursor: data.pageInfo.endCursor ?? null,
-          });
+          setSelected(map);
+          setHasSavedSelection(true);
         } else {
-          setPageInfo(null);
+          setSelected({});
+          setHasSavedSelection(false);
         }
-
-        setPage((prev) => {
-          if (cursor) {
-            if (direction === "next") {
-              return prev + 1;
-            }
-            if (direction === "prev") {
-              return Math.max(1, prev - 1);
-            }
-          }
-          return 1;
-        });
-      } catch (err: unknown) {
-        console.error("Error loading products", err);
-        setError(getErrorMessage(err));
-      } finally {
-        setLoading(false);
+      } else if (selectionResp.status !== 404) {
+        const txt = await selectionResp.text();
+        throw new Error(txt || `HTTP ${selectionResp.status}`);
       }
-    },
-    [adminHost, shop]
-  );
+    } catch (err: any) {
+      console.error("Error loading products", err);
+      setError(err?.message ? String(err.message) : "Error inesperado");
+    } finally {
+      setLoading(false);
+    }
+  }, [shop]);
 
   useEffect(() => {
     if (!resolvingShop && shop) {
@@ -376,8 +242,11 @@ export default function AdminLanding() {
         throw new Error(txt || `HTTP ${resp.status}`);
       }
 
-      setSavedMessage(`Guardados ${chosen.length} productos.`);
-    } catch (err: unknown) {
+      setSavedMessage(
+        `Guardados ${chosen.length} producto${chosen.length === 1 ? "" : "s"}. Continúa con el paso 2 para activar el probador en tu tienda.`,
+      );
+      setHasSavedSelection(true);
+    } catch (err: any) {
       console.error("Error saving selection", err);
       const message = getErrorMessage(err) || "Error guardando selección";
       setError(message);
@@ -385,6 +254,23 @@ export default function AdminLanding() {
       setSaving(false);
     }
   };
+
+  const storeSubdomain = useMemo(() => {
+    if (!shop) return "";
+    const suffix = ".myshopify.com";
+    return shop.endsWith(suffix) ? shop.slice(0, -suffix.length) : shop;
+  }, [shop]);
+
+  const themeEditorUrl = useMemo(() => {
+    return storeSubdomain
+      ? `https://admin.shopify.com/store/${storeSubdomain}/themes/current/editor?context=apps`
+      : "https://admin.shopify.com/store";
+  }, [storeSubdomain]);
+
+  const openThemeEditor = useCallback(() => {
+    if (!hasSavedSelection) return;
+    window.open(themeEditorUrl, "_blank", "noopener,noreferrer");
+  }, [hasSavedSelection, themeEditorUrl]);
 
   return (
     <div
@@ -577,6 +463,66 @@ export default function AdminLanding() {
           {savedMessage}
         </div>
       )}
+
+      <section
+        style={{
+          marginTop: 32,
+          border: "1px solid #e5e7eb",
+          borderRadius: 16,
+          padding: 24,
+          background: "#f9fafb",
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+        }}
+      >
+        <header style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ color: "#6b7280", fontWeight: 600 }}>Paso 2</span>
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Activa la App en tu Theme</h2>
+          <p style={{ margin: 0, color: "#4b5563", maxWidth: 560 }}>
+            Habilita el bloque de Antia en el Theme Editor para mostrar el botón del probador en la página de producto.
+          </p>
+        </header>
+
+        <ol style={{ margin: 0, paddingLeft: 20, color: "#111827", display: "flex", flexDirection: "column", gap: 8 }}>
+          <li>
+            Abre el Theme Editor (tienda online &gt; Personalizar) y selecciona una página de producto donde quieras activar el probador.
+          </li>
+          <li>
+            En el árbol de secciones, haz clic en <strong>Agregar bloque</strong> dentro de la sección de producto y elige <strong>Antia Try On Button</strong>.
+          </li>
+          <li>
+            Guarda los cambios. El botón aparecerá automáticamente en los productos seleccionados en el Paso 1.
+          </li>
+        </ol>
+
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 12,
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <button
+            onClick={openThemeEditor}
+            style={{
+              ...primaryButtonStyle,
+              background: hasSavedSelection ? "#111827" : "#9ca3af",
+              cursor: hasSavedSelection ? "pointer" : "not-allowed",
+            }}
+            disabled={!hasSavedSelection}
+          >
+            Abrir Theme Editor
+          </button>
+          <span style={{ color: "#6b7280" }}>
+            {hasSavedSelection
+              ? "Selecciona el bloque de Antia en tu theme para finalizar"
+              : "Guarda al menos un producto en el Paso 1 para continuar"}
+          </span>
+        </div>
+      </section>
     </div>
   );
 }
