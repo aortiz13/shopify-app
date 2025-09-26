@@ -695,8 +695,8 @@ router.get("/api/products", async (ctx: Context) => {
                 title
                 handle
                 updatedAt
-                featuredImage { url altText }
-                images(first: 1) { edges { node { url altText } } }
+                featuredImage { url originalSrc altText }
+                images(first: 1) { edges { node { url originalSrc altText } } }
               }
             }
             pageInfo {
@@ -718,8 +718,8 @@ router.get("/api/products", async (ctx: Context) => {
                 title
                 handle
                 updatedAt
-                featuredImage { url altText }
-                images(first: 1) { edges { node { url altText } } }
+                featuredImage { url originalSrc altText }
+                images(first: 1) { edges { node { url originalSrc altText } } }
                 variants(first: 5) { edges { node { id title sku } } }
                 metafields(first: 10, namespace: "internal") { edges { node { key value } } }
               }

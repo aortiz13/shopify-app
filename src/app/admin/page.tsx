@@ -1,10 +1,11 @@
 // src/app/admin/page.tsx
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type ProductImage = {
   url?: string | null;
+  originalSrc?: string | null;
   altText?: string | null;
 };
 
@@ -114,6 +115,8 @@ export default function AdminLanding() {
   const [pageInfo, setPageInfo] = useState<PageInfo | null>(null);
   const [page, setPage] = useState(1);
   const [resolvingShop, setResolvingShop] = useState(true);
+  const [currentStartCursor, setCurrentStartCursor] = useState<string | null>(null);
+  const currentStartCursorRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -130,6 +133,8 @@ export default function AdminLanding() {
       setShop(value);
       setPage(1);
       setPageInfo(null);
+      setCurrentStartCursor(null);
+      currentStartCursorRef.current = null;
       setError(null);
       if (hostParam && value) {
         rememberShopForHost(hostParam, value);
@@ -214,28 +219,60 @@ export default function AdminLanding() {
 
         setProducts(productList);
 
-        const pageInfoData = productsJson?.pageInfo;
-        if (pageInfoData && typeof pageInfoData === "object") {
-          setPageInfo({
-            hasNextPage: Boolean(pageInfoData.hasNextPage),
-            hasPreviousPage: Boolean(pageInfoData.hasPreviousPage),
-            startCursor: pageInfoData.startCursor ?? null,
-            endCursor: pageInfoData.endCursor ?? null,
-          });
-        } else {
-          setPageInfo(null);
-        }
-
         const resolvedDirection =
           typeof productsJson?.direction === "string" &&
           (productsJson.direction === "prev" || productsJson.direction === "next")
             ? (productsJson.direction as "prev" | "next")
             : direction;
 
-        if (options.cursor) {
-          setPage((prev) => (resolvedDirection === "prev" ? Math.max(1, prev - 1) : prev + 1));
+        const pageInfoData = productsJson?.pageInfo;
+        const pageInfoObject =
+          pageInfoData && typeof pageInfoData === "object"
+            ? {
+                hasNextPage: Boolean(pageInfoData.hasNextPage),
+                hasPreviousPage: Boolean(pageInfoData.hasPreviousPage),
+                startCursor: pageInfoData.startCursor ?? null,
+                endCursor: pageInfoData.endCursor ?? null,
+              }
+            : null;
+
+        const firstProductCursor =
+          productList.length > 0 && productList[0]?.cursor ? String(productList[0]?.cursor) : null;
+        const lastProductCursor =
+          productList.length > 0 && productList[productList.length - 1]?.cursor
+            ? String(productList[productList.length - 1]?.cursor)
+            : null;
+
+        const resolvedStartCursor = pageInfoObject?.startCursor ?? firstProductCursor;
+        const resolvedEndCursor = pageInfoObject?.endCursor ?? lastProductCursor;
+
+        if (pageInfoObject) {
+          setPageInfo({
+            ...pageInfoObject,
+            startCursor: resolvedStartCursor ?? null,
+            endCursor: resolvedEndCursor ?? null,
+          });
+        } else if (resolvedStartCursor || resolvedEndCursor) {
+          setPageInfo({
+            hasNextPage: Boolean(productsJson?.hasNextPage),
+            hasPreviousPage: Boolean(productsJson?.hasPreviousPage),
+            startCursor: resolvedStartCursor ?? null,
+            endCursor: resolvedEndCursor ?? null,
+          });
+        } else {
+          setPageInfo(null);
         }
 
+        currentStartCursorRef.current = resolvedStartCursor ?? null;
+        setCurrentStartCursor(resolvedStartCursor ?? null);
+
+        if (!options.cursor) {
+          setPage(1);
+        } else if (resolvedDirection === "next") {
+          setPage((prev) => prev + 1);
+        } else {
+          setPage((prev) => Math.max(1, prev - 1));
+        }
         if (selectionResp.ok) {
           const selectionJson = await selectionResp.json();
           savedProducts = Array.isArray(selectionJson?.products)
@@ -515,10 +552,17 @@ export default function AdminLanding() {
                   product.images?.edges?.find((edge) => edge?.node)?.node ?? null;
                 const preferredImage =
                   product.featuredImage &&
-                  (product.featuredImage.url || product.featuredImage.altText)
+                  (product.featuredImage.url ||
+                    product.featuredImage.originalSrc ||
+                    product.featuredImage.altText)
                     ? product.featuredImage
                     : firstGalleryImage;
-                const imageUrl = preferredImage?.url ?? firstGalleryImage?.url ?? undefined;
+                const imageUrl =
+                  preferredImage?.url ??
+                  preferredImage?.originalSrc ??
+                  firstGalleryImage?.url ??
+                  firstGalleryImage?.originalSrc ??
+                  undefined;
                 const imageAlt =
                   preferredImage?.altText ?? firstGalleryImage?.altText ?? product.title;
 
@@ -526,12 +570,12 @@ export default function AdminLanding() {
                   <tr key={product.id} style={{ borderTop: "1px solid #f3f4f6" }}>
                     <td style={tdStyle}>
                       <input
-                      type="checkbox"
-                      checked={!!selected[product.id]}
-                      onChange={() => toggleProduct(product.id)}
-                      disabled={busy}
-                    />
-                  </td>
+                        type="checkbox"
+                        checked={!!selected[product.id]}
+                        onChange={() => toggleProduct(product.id)}
+                        disabled={busy}
+                      />
+                    </td>
                   <td style={productCellStyle}>
                     <div style={imageWrapperStyle}>
                       {imageUrl ? (
@@ -572,13 +616,13 @@ export default function AdminLanding() {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button
-            onClick={() =>
-              loadProducts({ cursor: pageInfo?.startCursor ?? undefined, direction: "prev" })
-            }
+            onClick={() => {
+              const cursor = currentStartCursorRef.current;
+              if (!cursor) return;
+              loadProducts({ cursor, direction: "prev" });
+            }}
             style={buttonStyle}
-            disabled={
-              busy || !pageInfo?.hasPreviousPage || !pageInfo?.startCursor || page <= 1
-            }
+            disabled={busy || !pageInfo?.hasPreviousPage || !currentStartCursor || page <= 1}
           >
             Anterior
           </button>
