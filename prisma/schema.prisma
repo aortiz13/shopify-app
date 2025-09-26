@@ -29,9 +29,11 @@ model TryOnLog {
 
   @@index([shop, productId])
 }
-model tryOnSelection {
+model TryOnSelection {
   id           Int      @id @default(autoincrement())
   shop         String
   productsJson String
   createdAt    DateTime @default(now())
+
+  @@map("tryOnSelection")
 }

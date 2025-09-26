@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import { basename, dirname, resolve } from "node:path";
 
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 function ensureWritableSqliteDatabase() {
   const url = process.env.DATABASE_URL;
@@ -26,6 +26,7 @@ function ensureWritableSqliteDatabase() {
       fs.writeFileSync(absolutePath, "");
     }
 
+    fs.accessSync(dir, fs.constants.W_OK);
     fs.accessSync(absolutePath, fs.constants.W_OK);
     return;
   } catch (error) {
@@ -87,7 +88,9 @@ export async function getShopToken(shop: string) {
 }
 
 export async function getShopByAdminHost(adminHost: string) {
-  const row = await prisma.shopSession.findFirst({ where: { adminHost } });
+  const row = await prisma.shopSession.findFirst({
+    where: { adminHost } as Prisma.ShopSessionWhereInput,
+  });
   return row?.shop ?? null;
 }
 
