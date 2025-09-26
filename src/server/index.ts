@@ -176,7 +176,7 @@ router.get("/proxy/widget", async (ctx) => {
       "font-src 'self' data: https:",
       "connect-src 'self' https: wss:",
       "frame-ancestors https://admin.shopify.com https://*.myshopify.com",
-      "frame-src https://admin.shopify.com https://*.myshopify.com",
+      "frame-src https://admin.shopify.com https://*.myshopify.com https://app.adrian-ortiz.com",
     ].join("; ");
     ctx.set("Content-Security-Policy", csp);
     ctx.remove("X-Frame-Options");
