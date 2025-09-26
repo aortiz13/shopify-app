@@ -87,7 +87,7 @@ app.use(
   }),
 );
 
-// /widget (UI del popup/iframe) y todo lo que cuelga
+// /widget (UI del selector integrado en la página) y todo lo que cuelga
 app.use(
   proxy(/^\/widget(?:\/.*)?$/, {
     target: NEXT_TARGET,
