@@ -70,11 +70,14 @@ export async function saveShopSession(params: {
   adminHost?: string | null;
 }) {
   const { shop, accessToken, scope, isOnline = false, adminHost } = params;
+
   const updateData: Prisma.ShopSessionUpdateInput = {
     accessToken,
     scope,
     isOnline,
-    ...(adminHost !== undefined ? { adminHost } : {}),
+    ...(adminHost !== undefined
+      ? { adminHost: { set: adminHost ?? null } }
+      : {}),
   };
 
   const createData: Prisma.ShopSessionCreateInput = {
@@ -82,7 +85,7 @@ export async function saveShopSession(params: {
     accessToken,
     scope,
     isOnline,
-    ...(adminHost !== undefined ? { adminHost } : {}),
+    ...(adminHost !== undefined ? { adminHost: adminHost ?? null } : {}),
   };
 
   return prisma.shopSession.upsert({
