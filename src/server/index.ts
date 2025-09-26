@@ -168,15 +168,16 @@ router.get("/proxy/widget", async (ctx) => {
 
     // CSP válida para storefront/admin
     const isDev = process.env.NODE_ENV !== "production";
+    const scriptSrc = isDev ? "'unsafe-inline' 'unsafe-eval' https:" : "https:";
     const csp = [
       "default-src 'self' https:",
       "img-src 'self' data: https:",
       "style-src 'self' 'unsafe-inline' https:",
-      `script-src 'self' ${isDev ? "'unsafe-inline' 'unsafe-eval' " : ""}https:`,
+      `script-src 'self' ${scriptSrc}`,
       "font-src 'self' data: https:",
       "connect-src 'self' https: wss:",
       "frame-ancestors https://admin.shopify.com https://*.myshopify.com",
-     "frame-src https://admin.shopify.com https://*.myshopify.com https://app.adrian-ortiz.com https://app.adrian-ortiz.com/picker",
+      "frame-src https://admin.shopify.com https://*.myshopify.com https://app.adrian-ortiz.com https://app.adrian-ortiz.com/picker",
     ].join("; ");
     ctx.set("Content-Security-Policy", csp);
     ctx.remove("X-Frame-Options");
@@ -192,6 +193,48 @@ router.get("/proxy/widget", async (ctx) => {
     ctx.body = "Proxy error";
   }
 });
+
+router.get("/proxy/picker", async (ctx) => {
+  try {
+    const qs = ctx.querystring ? `?${ctx.querystring}` : "";
+    const upstreamUrl = `${NEXT_TARGET}/picker${qs}`;
+
+    const upstream = await fetch(upstreamUrl, {
+      headers: {
+        "x-forwarded-host": ctx.host,
+        "x-forwarded-proto": ctx.secure ? "https" : "http",
+      },
+    });
+
+    copyUpstreamHeaders(upstream as unknown as Response, ctx);
+
+    const isDev = process.env.NODE_ENV !== "production";
+    const scriptSrc = isDev ? "'unsafe-inline' 'unsafe-eval' https:" : "https:";
+    const csp = [
+      "default-src 'self' https:",
+      "img-src 'self' data: https:",
+      "style-src 'self' 'unsafe-inline' https:",
+      `script-src 'self' ${scriptSrc}`,
+      "font-src 'self' data: https:",
+      "connect-src 'self' https: wss:",
+      "frame-ancestors https://admin.shopify.com https://*.myshopify.com",
+      "frame-src https://admin.shopify.com https://*.myshopify.com",
+    ].join("; ");
+    ctx.set("Content-Security-Policy", csp);
+    ctx.remove("X-Frame-Options");
+    ctx.set("Access-Control-Allow-Origin", "*");
+    ctx.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    ctx.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    ctx.set("Access-Control-Allow-Credentials", "true");
+    ctx.status = upstream.status;
+    ctx.body = await upstream.text();
+  } catch (e) {
+    console.error("❌ /proxy/picker error:", e);
+    ctx.status = 502;
+    ctx.body = "Proxy error";
+  }
+});
+
 
 // ----------------------------------------------------
 // Rutas utilitarias
