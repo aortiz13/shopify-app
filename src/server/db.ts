@@ -70,15 +70,20 @@ export async function saveShopSession(params: {
   adminHost?: string | null;
 }) {
   const { shop, accessToken, scope, isOnline = false, adminHost } = params;
+  const updateData: Prisma.ShopSessionUpdateInput = {
+    accessToken,
+    scope,
+    isOnline,
+  };
+
+  if (adminHost !== undefined) {
+    updateData.adminHost = adminHost;
+  }
+
   return prisma.shopSession.upsert({
     where: { shop },
     create: { shop, accessToken, scope, isOnline, adminHost: adminHost ?? undefined },
-    update: {
-      accessToken,
-      scope,
-      isOnline,
-      ...(adminHost ? { adminHost } : {}),
-    },
+    update: updateData,
   });
 }
 
@@ -97,9 +102,12 @@ export async function getShopByAdminHost(adminHost: string) {
 export async function rememberAdminHost(params: { shop: string; adminHost: string }) {
   const { shop, adminHost } = params;
   try {
+    const data: Prisma.ShopSessionUpdateInput = {};
+    data.adminHost = adminHost;
+
     await prisma.shopSession.update({
       where: { shop },
-      data: { adminHost },
+      data,
     });
   } catch (error) {
     console.warn("No se pudo guardar adminHost para la tienda", { shop, adminHost, error });
