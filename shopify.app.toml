@@ -1,0 +1,24 @@
+# shopify.app.toml
+name = "Probador Virtual"
+client_id = "a0f342f67ced139f8f87857810c533ce"                     # = SHOPIFY_API_KEY de tu .env.local
+application_url = "https://app.adrian-ortiz.com/admin?ngrok-skip-browser-warning=true"
+embedded = true
+
+[access_scopes]
+scopes = "read_products,write_products"
+
+[auth]
+redirect_urls = ["https://app.adrian-ortiz.com/api/auth/callback"]
+
+[webhooks]
+api_version = "2025-01"
+
+[build]
+# Si NO quieres que el CLI te cambie URLs durante 'shopify app dev', déjalo en false
+automatically_update_urls_on_dev = false
+dev_store_url = "actual-moda-dev.myshopify.com"
+
+[app_proxy]
+url = "https://app.adrian-ortiz.com"
+subpath = "tryon"
+prefix = "apps"

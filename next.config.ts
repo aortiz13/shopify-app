@@ -1,23 +1,33 @@
+// ~/shopify-app/next.config.ts
+import path from "path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  async headers() {
-    if (process.env.HOST?.includes("ngrok")) {
-      return [
-        {
-          source: "/:path*",
-          headers: [{ key: "ngrok-skip-browser-warning", value: "true" }],
-        },
-      ];
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.devtool = 'cheap-module-source-map'
     }
-
-    return [];
+    return config
+  },
+  outputFileTracingRoot: path.join(process.cwd()),
+  
+  // AGREGAR ESTO:
+  async headers() {
     return [
       {
-        source: "/:path*",
-        headers: [{ key: "ngrok-skip-browser-warning", value: "true" }],
+        source: '/picker',
+        headers: [
+          {
+            key: 'X-Frame-Options',
+            value: 'ALLOWALL',
+          },
+          {
+            key: 'Content-Security-Policy',
+            value: "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com;",
+          },
+        ],
       },
-    ];
+    ]
   },
 };
 

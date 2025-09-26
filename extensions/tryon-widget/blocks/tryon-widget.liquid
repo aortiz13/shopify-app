@@ -1,0 +1,39 @@
+{%- comment -%}
+Bloque del Probador Virtual
+- En tienda real usa App Proxy (/apps/tryon/widget)
+- En editor de temas usa HOST externo (Cloudflare) para evitar el CSP del proxy
+{%- endcomment -%}
+
+<div
+  data-tryon-root
+  data-product-id="{{ product.id }}"
+  data-shop="{{ shop.permanent_domain }}"
+  data-button-label="{{ block.settings.button_label | escape }}"
+  data-host="{{ block.settings.host | escape }}"
+></div>
+
+<link rel="stylesheet" href="{{ 'tryon-widget.css' | asset_url }}" />
+<script src="{{ 'tryon-widget.js' | asset_url }}" defer></script>
+
+{% schema %}
+{
+  "name": "Probador Virtual",
+  "target": "section",
+  "enabled_on": { "templates": ["product"] },
+  "settings": [
+    {
+      "type": "text",
+      "id": "host",
+      "label": "HOST de la app (Cloudflare/producción)",
+      "info": "Ej: https://app.adrian-ortiz.com",
+      "default": "https://app.adrian-ortiz.com"
+    },
+    {
+      "type": "text",
+      "id": "button_label",
+      "label": "Texto del botón",
+      "default": "Probar prenda"
+    }
+  ]
+}
+{% endschema %}

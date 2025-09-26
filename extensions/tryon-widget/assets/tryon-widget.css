@@ -1,0 +1,42 @@
+.tryon-btn {
+  appearance: none;
+  border: 0;
+  background: #111;
+  color: #fff;
+  padding: 12px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.tryon-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999999;
+}
+
+.tryon-iframe {
+  width: min(900px, 95vw);
+  height: min(640px, 90vh);
+  border: 0;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.3);
+}
+
+.tryon-close {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  height: 40px;
+  width: 40px;
+  border-radius: 999px;
+  border: 0;
+  background: #111;
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+}
