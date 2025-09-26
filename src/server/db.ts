@@ -110,13 +110,11 @@ export async function getShopByAdminHost(adminHost: string) {
 export async function rememberAdminHost(params: { shop: string; adminHost: string }) {
   const { shop, adminHost } = params;
   try {
-    const data = Prisma.validator<Prisma.ShopSessionUpdateInput>()({
-      adminHost: { set: adminHost },
-    });
-
     await prisma.shopSession.update({
       where: { shop },
-      data,
+      data: {
+        adminHost,
+      },
     });
   } catch (error) {
     console.warn("No se pudo guardar adminHost para la tienda", { shop, adminHost, error });
