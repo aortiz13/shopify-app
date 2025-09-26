@@ -40,7 +40,7 @@ const CSP = [
   "style-src 'self' 'unsafe-inline' https:",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:",
   "font-src 'self' data: https:",
-  "connect-src 'self' https: wss:",
+  "connect-src 'self' https: wss: ws:",
   "frame-ancestors https://admin.shopify.com https://*.myshopify.com",
   "frame-src https://admin.shopify.com https://*.myshopify.com https://app.adrian-ortiz.com https://app.adrian-ortiz.com/picker",
 ].join("; ");
