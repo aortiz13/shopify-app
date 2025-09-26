@@ -28,6 +28,13 @@ function ensureWritableSqliteDatabase() {
 
     fs.accessSync(dir, fs.constants.W_OK);
     fs.accessSync(absolutePath, fs.constants.W_OK);
+
+    // `fs.access` is not always enough to detect read-only mounts (e.g. macOS
+    // volumes shared via Docker). Attempt opening the file for read/write to
+    // ensure the database can actually be written to; otherwise we'll fall back
+    // to the tmp copy below.
+    const handle = fs.openSync(absolutePath, fs.constants.O_RDWR);
+    fs.closeSync(handle);
     return;
   } catch (error) {
     console.warn("SQLite database is not writable, preparing a tmp copy.", error);
