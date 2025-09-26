@@ -42,7 +42,7 @@ const CSP = [
   "font-src 'self' data: https:",
   "connect-src 'self' https: wss:",
   "frame-ancestors https://admin.shopify.com https://*.myshopify.com",
-  "frame-src https://admin.shopify.com https://*.myshopify.com https://app.adrian-ortiz.com",
+  "frame-src https://admin.shopify.com https://*.myshopify.com https://app.adrian-ortiz.com https://app.adrian-ortiz.com/picker",
 ].join("; ");
 
 app.use(async (ctx, next) => {
