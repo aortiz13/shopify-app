@@ -36,6 +36,35 @@ const getErrorMessage = (err: unknown): string => {
   return typeof err === "string" ? err : "Error inesperado";
 };
 
+const STORAGE_PREFIX = "tryon-shop-for-host::";
+
+const rememberShopForHost = (host: string, shop: string) => {
+  if (!host || !shop) return;
+
+  try {
+    if (typeof window !== "undefined" && window.sessionStorage) {
+      window.sessionStorage.setItem(`${STORAGE_PREFIX}${host}`, shop);
+    }
+  } catch (error) {
+    console.warn("No se pudo guardar la tienda en sessionStorage", error);
+  }
+};
+
+const getStoredShopForHost = (host: string): string | null => {
+  if (!host) return null;
+
+  try {
+    if (typeof window !== "undefined" && window.sessionStorage) {
+      const value = window.sessionStorage.getItem(`${STORAGE_PREFIX}${host}`);
+      return value ? value : null;
+    }
+  } catch (error) {
+    console.warn("No se pudo leer la tienda desde sessionStorage", error);
+  }
+
+  return null;
+};
+
 const decodeHostShop = (hostParam: string): string | null => {
   try {
     const normalized = hostParam.replace(/-/g, "+").replace(/_/g, "/");
@@ -65,52 +94,6 @@ const decodeHostShop = (hostParam: string): string | null => {
   return null;
 };
 
-const resolveShopFromLocation = (): string => {
-  if (typeof window === "undefined") {
-    return "";
-  }
-
-  const parseShop = (search: string | undefined | null): string => {
-    if (!search) {
-      return "";
-    }
-
-    const params = new URLSearchParams(search);
-    const direct = params.get("shop");
-    if (direct) {
-      return direct;
-    }
-
-    const host = params.get("host");
-    if (host) {
-      const fromHost = decodeHostShop(host);
-      if (fromHost) {
-        return fromHost;
-      }
-    }
-
-    return "";
-  };
-
-  const current = parseShop(window.location.search);
-  if (current) {
-    return current;
-  }
-
-  try {
-    if (window.top && window.top !== window) {
-      const fromTop = parseShop(window.top.location.search);
-      if (fromTop) {
-        return fromTop;
-      }
-    }
-  } catch (error) {
-    console.warn("No se pudo acceder a window.top.location", error);
-  }
-
-  return "";
-};
-
 export default function AdminLanding() {
   const [products, setProducts] = useState<Product[]>([]);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
@@ -122,14 +105,106 @@ export default function AdminLanding() {
   const [pageInfo, setPageInfo] = useState<PageInfo | null>(null);
   const [page, setPage] = useState(1);
   const [shop, setShop] = useState<string>("");
+  const [adminHost, setAdminHost] = useState<string>("");
+  const [resolvingShop, setResolvingShop] = useState(true);
 
   useEffect(() => {
-    const resolved = resolveShopFromLocation();
-    if (resolved) {
-      setShop(resolved);
-    } else {
-      setError("No se pudo determinar la tienda. Reabre la app desde Shopify.");
+    if (typeof window === "undefined") {
+      setResolvingShop(false);
+      return;
     }
+
+    let cancelled = false;
+    setResolvingShop(true);
+    setError(null);
+
+    const params = new URLSearchParams(window.location.search);
+    const shopParam = params.get("shop")?.trim() ?? "";
+    const hostParam = params.get("host")?.trim() ?? "";
+
+    if (hostParam) {
+      setAdminHost(hostParam);
+    }
+
+    const complete = (
+      resolvedShop: string | null,
+      options?: { remember?: boolean; silentError?: boolean },
+    ) => {
+      if (cancelled) return;
+
+      const shouldRemember = options?.remember ?? true;
+      const silentError = options?.silentError ?? false;
+
+      if (resolvedShop) {
+        setShop(resolvedShop);
+        setError(null);
+        if (hostParam && shouldRemember) {
+          rememberShopForHost(hostParam, resolvedShop);
+        }
+      } else if (!silentError) {
+        setShop("");
+        setError("No se pudo determinar la tienda. Reabre la app desde Shopify.");
+      }
+
+      setResolvingShop(false);
+    };
+
+    if (shopParam) {
+      complete(shopParam);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (hostParam) {
+      const stored = getStoredShopForHost(hostParam);
+      if (stored) {
+        complete(stored);
+        return () => {
+          cancelled = true;
+        };
+      }
+
+      const decoded = decodeHostShop(hostParam);
+      if (decoded) {
+        complete(decoded);
+        return () => {
+          cancelled = true;
+        };
+      }
+
+      (async () => {
+        try {
+          const resp = await fetch(`/api/session/resolve-shop?host=${encodeURIComponent(hostParam)}`);
+          if (!resp.ok) {
+            complete(null, { remember: false });
+            return;
+          }
+
+          const data = await resp.json();
+          const resolved = typeof data?.shop === "string" ? data.shop : "";
+          if (resolved) {
+            complete(resolved);
+            return;
+          }
+
+          complete(null, { remember: false });
+        } catch (err) {
+          console.error("Error resolviendo la tienda desde host", err);
+          complete(null, { remember: false });
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    complete(null, { remember: false });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const loadProducts = useCallback(
@@ -143,6 +218,9 @@ export default function AdminLanding() {
 
       const qs = new URLSearchParams();
       qs.set("shop", shop);
+      if (adminHost) {
+        qs.set("host", adminHost);
+      }
       if (cursor) {
         qs.set("cursor", cursor);
       }
@@ -161,6 +239,13 @@ export default function AdminLanding() {
           throw new Error(txt || `HTTP ${resp.status}`);
         }
         const data = await resp.json();
+        const resolvedShop = typeof data?.shop === "string" ? data.shop : "";
+        if (resolvedShop && resolvedShop !== shop) {
+          setShop(resolvedShop);
+          if (adminHost) {
+            rememberShopForHost(adminHost, resolvedShop);
+          }
+        }
         const items = Array.isArray(data?.products) ? data.products : [];
         setProducts(items);
 
@@ -205,14 +290,14 @@ export default function AdminLanding() {
         setLoading(false);
       }
     },
-    [shop]
+    [adminHost, shop]
   );
 
   useEffect(() => {
-    if (shop) {
+    if (!resolvingShop && shop) {
       loadProducts();
     }
-  }, [loadProducts, shop]);
+  }, [loadProducts, resolvingShop, shop]);
 
   const toggleProduct = (id: string) => {
     setSelected((prevSelected) => {
@@ -262,6 +347,8 @@ export default function AdminLanding() {
     [selectedDetails]
   );
 
+  const busy = loading || resolvingShop;
+
   const handleSave = async () => {
     if (!shop) {
       setError("No se pudo determinar la tienda. Reabre la app desde Shopify.");
@@ -279,6 +366,7 @@ export default function AdminLanding() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           shop,
+          host: adminHost,
           products: chosen.map(({ id, title, handle }) => ({ id, title, handle })),
         }),
       });
@@ -324,17 +412,19 @@ export default function AdminLanding() {
           alignItems: "center",
         }}
       >
-        <button onClick={selectAll} style={buttonStyle} disabled={loading || products.length === 0}>
+        <button onClick={selectAll} style={buttonStyle} disabled={busy || products.length === 0}>
           Seleccionar todos
         </button>
-        <button onClick={clearAll} style={buttonStyle} disabled={loading || products.length === 0}>
+        <button onClick={clearAll} style={buttonStyle} disabled={busy || products.length === 0}>
           Limpiar selección
         </button>
-        <button onClick={() => loadProducts()} style={buttonStyle} disabled={loading}>
-          {loading ? "Actualizando…" : "Actualizar"}
+        <button onClick={() => loadProducts()} style={buttonStyle} disabled={busy}>
+          {loading ? "Actualizando…" : resolvingShop ? "Resolviendo tienda…" : "Actualizar"}
         </button>
         <span style={{ marginLeft: "auto", color: "#6b7280" }}>
-          {loading
+          {resolvingShop
+            ? "Determinando la tienda…"
+            : loading
             ? "Cargando productos…"
             : `Página ${page} · ${products.length} producto${products.length === 1 ? "" : "s"}`}
         </span>
@@ -362,32 +452,40 @@ export default function AdminLanding() {
             </tr>
           </thead>
           <tbody>
-            {loading && (
+            {resolvingShop && (
+              <tr>
+                <td colSpan={2} style={tdStyle}>
+                  Determinando la tienda…
+                </td>
+              </tr>
+            )}
+            {!resolvingShop && loading && (
               <tr>
                 <td colSpan={2} style={tdStyle}>
                   Cargando productos…
                 </td>
               </tr>
             )}
-            {!loading && products.length === 0 && (
+            {!resolvingShop && !loading && products.length === 0 && (
               <tr>
                 <td colSpan={2} style={tdStyle}>
                   No se encontraron productos.
                 </td>
               </tr>
             )}
-            {products.map((product) => {
-              const imageUrl = product.featuredImage?.url ?? undefined;
-              const imageAlt = product.featuredImage?.altText ?? product.title;
+            {!resolvingShop &&
+              products.map((product) => {
+                const imageUrl = product.featuredImage?.url ?? undefined;
+                const imageAlt = product.featuredImage?.altText ?? product.title;
 
-              return (
-                <tr key={product.id} style={{ borderTop: "1px solid #f3f4f6" }}>
-                  <td style={tdStyle}>
-                    <input
+                return (
+                  <tr key={product.id} style={{ borderTop: "1px solid #f3f4f6" }}>
+                    <td style={tdStyle}>
+                      <input
                       type="checkbox"
                       checked={!!selected[product.id]}
                       onChange={() => toggleProduct(product.id)}
-                      disabled={loading}
+                      disabled={busy}
                     />
                   </td>
                   <td style={productCellStyle}>
@@ -424,7 +522,9 @@ export default function AdminLanding() {
         }}
       >
         <div style={{ color: "#6b7280", fontSize: 14 }}>
-          Mostrando {products.length} producto{products.length === 1 ? "" : "s"} · Página {page}
+          {resolvingShop
+            ? "Esperando la tienda para mostrar productos…"
+            : `Mostrando ${products.length} producto${products.length === 1 ? "" : "s"} · Página ${page}`}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button
@@ -433,7 +533,7 @@ export default function AdminLanding() {
             }
             style={buttonStyle}
             disabled={
-              loading || !pageInfo?.hasPreviousPage || !pageInfo?.startCursor || page <= 1
+              busy || !pageInfo?.hasPreviousPage || !pageInfo?.startCursor || page <= 1
             }
           >
             Anterior
@@ -441,7 +541,7 @@ export default function AdminLanding() {
           <button
             onClick={() => loadProducts({ cursor: pageInfo?.endCursor ?? undefined, direction: "next" })}
             style={buttonStyle}
-            disabled={loading || !pageInfo?.hasNextPage || !pageInfo?.endCursor}
+            disabled={busy || !pageInfo?.hasNextPage || !pageInfo?.endCursor}
           >
             Siguiente
           </button>
@@ -450,14 +550,16 @@ export default function AdminLanding() {
 
       <footer style={{ display: "flex", justifyContent: "flex-end", gap: 12, alignItems: "center" }}>
         <div style={{ color: "#4b5563" }}>
-          {selectedCount === 0
+          {resolvingShop
+            ? "Esperando la tienda..."
+            : selectedCount === 0
             ? "Selecciona al menos un producto para continuar"
             : `${selectedCount} producto${selectedCount === 1 ? "" : "s"} seleccionados`}
         </div>
         <button
           onClick={handleSave}
           style={primaryButtonStyle}
-          disabled={saving || selectedCount === 0}
+          disabled={saving || selectedCount === 0 || busy}
         >
           {saving ? "Guardando…" : "Guardar selección"}
         </button>

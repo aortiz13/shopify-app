@@ -11,7 +11,14 @@ import session from "koa-session";
 import bodyParser from "koa-bodyparser";
 import proxy from "koa-proxies";
 import { shopify } from "./shopify";
-import { prisma, adminGraphqlEndpoint, getShopToken, saveShopSession } from "./db";
+import {
+  prisma,
+  adminGraphqlEndpoint,
+  getShopToken,
+  getShopByAdminHost,
+  saveShopSession,
+  rememberAdminHost,
+} from "./db";
 
 // ----------------------------------------------------
 // App base
@@ -163,6 +170,42 @@ function getErrorMessage(err: unknown): string {
   return typeof err === "string" ? err : String(err);
 }
 
+function normalizeShopParam(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeHostParam(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.trim();
+}
+
+async function resolveShopFromParams(params: { shop?: unknown; host?: unknown }) {
+  const shopParam = normalizeShopParam(params.shop);
+  if (shopParam) {
+    const hostParam = normalizeHostParam(params.host);
+    return { shop: shopParam, from: "shop" as const, host: hostParam || undefined };
+  }
+
+  const hostParam = normalizeHostParam(params.host);
+  if (!hostParam) {
+    return { shop: "", from: null as const };
+  }
+
+  const found = await getShopByAdminHost(hostParam);
+  if (found) {
+    return { shop: found, from: "host" as const, host: hostParam };
+  }
+
+  return { shop: "", from: "host" as const, host: hostParam };
+}
+
+async function persistAdminHostIfNeeded(shop: string, host?: string) {
+  const adminHost = normalizeHostParam(host);
+  if (!adminHost) return;
+
+  await rememberAdminHost({ shop, adminHost });
+}
+
 // ---------------------------------------------------------------------
 // App Proxy: Shopify -> /apps/tryon/widget  →  Tu host -> /proxy/widget
 // Aquí NO usamos koa-proxies para evitar "Http response closed while proxying"
@@ -262,6 +305,28 @@ router.get("/health", (ctx: Context) => {
 // Evitar 404 al abrir raíz del túnel
 router.get("/", (ctx: Context) => ctx.redirect("/admin"));
 
+router.get("/api/session/resolve-shop", async (ctx: Context) => {
+  const hostParam = normalizeHostParam(ctx.query.host);
+
+  if (!hostParam) {
+    ctx.status = 400;
+    ctx.body = { error: "Missing host" };
+    return;
+  }
+
+  const shop = await getShopByAdminHost(hostParam);
+
+  if (!shop) {
+    ctx.status = 404;
+    ctx.body = { error: "Unknown host" };
+    return;
+  }
+
+  await persistAdminHostIfNeeded(shop, hostParam);
+
+  ctx.body = { shop };
+});
+
 // ----------------------------------------------------
 // OAuth Shopify
 // ----------------------------------------------------
@@ -292,6 +357,8 @@ router.get("/api/auth/callback", async (ctx: Context) => {
       rawResponse: ctx.res,
     });
 
+    const hostParam = normalizeHostParam(ctx.query.host);
+
     type ShopifySession = {
       shop: string;
       accessToken?: string;
@@ -320,16 +387,19 @@ router.get("/api/auth/callback", async (ctx: Context) => {
       accessToken: sess.accessToken,
       scope,
       isOnline: !!sess.isOnline,
+      adminHost: hostParam || null,
     });
 
     console.log("🔐 Session guardada en DB:", {
       shop: sess.shop,
       scope,
       isOnline: sess.isOnline,
+      hostParam,
     });
 
     // Tras OAuth, redirigir al dashboard embebido
-    ctx.redirect(`/admin?shop=${encodeURIComponent(sess.shop)}`);
+    const redirectHost = hostParam ? `&host=${encodeURIComponent(hostParam)}` : "";
+    ctx.redirect(`/admin?shop=${encodeURIComponent(sess.shop)}${redirectHost}`);
   } catch (err: unknown) {
     console.error("❌ Error en callback OAuth:", err);
     ctx.status = 500;
@@ -344,6 +414,7 @@ router.post("/api/tryon/log", async (ctx: Context) => {
   try {
     type TryOnLogBody = {
       shop?: string;
+      host?: string;
       productId?: string;
       externalId?: string;
       variantId?: string;
@@ -354,6 +425,7 @@ router.post("/api/tryon/log", async (ctx: Context) => {
 
     const {
       shop,
+      host,
       productId,
       externalId,
       variantId,
@@ -362,14 +434,21 @@ router.post("/api/tryon/log", async (ctx: Context) => {
       metadata,
     } = (ctx.request as { body?: TryOnLogBody }).body ?? {};
 
-    if (!shop || !productId || !action) {
+    const resolved = await resolveShopFromParams({ shop, host });
+    const resolvedShop = resolved.shop;
+
+    if (!resolvedShop || !productId || !action) {
       ctx.status = 400;
       ctx.body = { error: "shop, productId y action son requeridos" };
       return;
     }
 
+    if (resolved.from) {
+      await persistAdminHostIfNeeded(resolvedShop, resolved.host ?? host);
+    }
+
     const log = await prisma.tryOnLog.create({
-      data: { shop, productId, externalId, variantId, customerId, action, metadata },
+      data: { shop: resolvedShop, productId, externalId, variantId, customerId, action, metadata },
     });
 
     ctx.body = { ok: true, id: log.id };
@@ -384,15 +463,22 @@ router.post("/api/tryon/save", async (ctx: Context) => {
   try {
     const body = ctx.request.body as {
       shop?: string;
+      host?: string;
       products?: Array<{ id: string; title?: string; handle?: string }>;
     };
-    const shop = body.shop ?? String(ctx.query.shop ?? "");
+    const hostParam = body.host ?? ctx.query.host;
+    const resolution = await resolveShopFromParams({ shop: body.shop, host: hostParam });
+    const shop = resolution.shop;
     const products = Array.isArray(body.products) ? body.products : [];
 
     if (!shop || products.length === 0) {
       ctx.status = 400;
       ctx.body = { error: "shop and products are required" };
       return;
+    }
+
+    if (resolution.from) {
+      await persistAdminHostIfNeeded(shop, resolution.host ?? (typeof hostParam === "string" ? hostParam : undefined));
     }
 
     const serialized = JSON.stringify(products);
@@ -426,12 +512,21 @@ router.post("/api/tryon/save", async (ctx: Context) => {
 });
 
 router.get("/api/tryon/selection", async (ctx: Context) => {
-  const shop = String(ctx.query.shop ?? "").trim();
+  const resolution = await resolveShopFromParams({
+    shop: ctx.query.shop,
+    host: ctx.query.host,
+  });
+
+  const shop = resolution.shop;
 
   if (!shop) {
     ctx.status = 400;
     ctx.body = { error: "Missing shop" };
     return;
+  }
+
+  if (resolution.from) {
+    await persistAdminHostIfNeeded(shop, resolution.host ?? normalizeHostParam(ctx.query.host));
   }
 
   try {
@@ -465,11 +560,20 @@ router.get("/api/tryon/selection", async (ctx: Context) => {
 // GET /api/products?shop=<shop.myshopify.com>[&debug=1]
 // ----------------------------------------------------
 router.get("/api/products", async (ctx: Context) => {
-  const shop = String(ctx.query.shop ?? "").trim();
+  const resolution = await resolveShopFromParams({
+    shop: ctx.query.shop,
+    host: ctx.query.host,
+  });
+
+  const shop = resolution.shop;
   if (!shop) {
     ctx.status = 400;
     ctx.body = { error: "Missing shop" };
     return;
+  }
+
+  if (resolution.from) {
+    await persistAdminHostIfNeeded(shop, resolution.host ?? normalizeHostParam(ctx.query.host));
   }
 
   try {
@@ -587,6 +691,7 @@ router.get("/api/products", async (ctx: Context) => {
     const pageInfo = json.data?.products?.pageInfo ?? null;
 
     ctx.body = {
+      shop,
       products: nodes,
       pageInfo: pageInfo && typeof pageInfo === "object"
         ? {

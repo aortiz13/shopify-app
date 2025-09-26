@@ -12,6 +12,7 @@ model ShopSession {
   accessToken String
   scope       String
   isOnline    Boolean  @default(false)
+  adminHost   String?  @unique
   updatedAt   DateTime @updatedAt
   createdAt   DateTime @default(now())
 }
