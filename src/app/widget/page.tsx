@@ -1,11 +1,16 @@
 // src/app/widget/page.tsx
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 
 export default function WidgetPage() {
   const [open, setOpen] = useState(false);
   const [iframeSrc, setIframeSrc] = useState<string | null>(null);
+
+  const shop =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("shop") || ""
+      : "";
 
   // Cambia esta URL por la que quieras cargar en el modal:
   // - si tienes un endpoint que muestra el product-picker, usa esa URL.
@@ -14,16 +19,31 @@ export default function WidgetPage() {
 
   const openPicker = useCallback(() => {
     // Agrega parámetros si quieres (ej: shop, productId)
-    const shop = new URLSearchParams(window.location.search).get("shop") || "";
     const q = shop ? `?shop=${encodeURIComponent(shop)}` : "";
     setIframeSrc(`${PICKER_URL}${q}`);
     setOpen(true);
-  }, []);
+  }, [shop]);
 
   const close = useCallback(() => {
     setOpen(false);
     setIframeSrc(null);
   }, []);
+
+  const storeSubdomain = useMemo(() => {
+    if (!shop) return "";
+    const suffix = ".myshopify.com";
+    return shop.endsWith(suffix) ? shop.slice(0, -suffix.length) : shop;
+  }, [shop]);
+
+  const themeEditorUrl = useMemo(() => {
+    return storeSubdomain
+      ? `https://admin.shopify.com/store/${storeSubdomain}/themes/current/editor?context=apps`
+      : "https://admin.shopify.com/store";
+  }, [storeSubdomain]);
+
+  const openThemeEditor = useCallback(() => {
+    window.open(themeEditorUrl, "_blank", "noopener,noreferrer");
+  }, [themeEditorUrl]);
 
   return (
     <div style={{ padding: 20, fontFamily: "system-ui, -apple-system, Roboto, 'Helvetica Neue', Arial" }}>
@@ -44,6 +64,49 @@ export default function WidgetPage() {
             }}
           >
             Seleccionar productos
+          </button>
+        </div>
+      </div>
+
+      <div
+        style={{
+          marginTop: 32,
+          border: "1px solid #e5e7eb",
+          borderRadius: 16,
+          padding: 24,
+          background: "#f9fafb",
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+          maxWidth: 720,
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ color: "#6b7280", fontWeight: 600 }}>Paso 2</span>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Activa Antia en tu Theme</h2>
+          <p style={{ margin: 0, color: "#4b5563" }}>
+            Una vez guardados tus productos, habilita el bloque del probador desde el Theme Editor para verlo en tu tienda.
+          </p>
+        </div>
+        <ol style={{ margin: 0, paddingLeft: 18, color: "#111827", display: "flex", flexDirection: "column", gap: 6 }}>
+          <li>Abre el Theme Editor y elige una plantilla de página de producto.</li>
+          <li>Haz clic en <strong>Agregar bloque</strong> dentro de la sección de producto y selecciona <strong>Antia Try On Button</strong>.</li>
+          <li>Guarda los cambios para que el botón aparezca en los productos seleccionados.</li>
+        </ol>
+        <div>
+          <button
+            onClick={openThemeEditor}
+            style={{
+              background: "#111",
+              color: "#fff",
+              padding: "10px 18px",
+              borderRadius: 8,
+              border: "none",
+              cursor: "pointer",
+              fontSize: 14,
+            }}
+          >
+            Abrir Theme Editor
           </button>
         </div>
       </div>

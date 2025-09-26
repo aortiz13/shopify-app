@@ -36,8 +36,13 @@ export default function PickerPageClient() {
       })
       .then((data) => {
         if (!mounted) return;
-        // data es array de productos (según tu endpoint /api/products)
-        setProducts(Array.isArray(data) ? data : []);
+        // data puede venir como { products: [...] }
+        const items = Array.isArray(data?.products)
+          ? data.products
+          : Array.isArray(data)
+          ? data
+          : [];
+        setProducts(items);
         setLoading(false);
       })
       .catch((err) => {

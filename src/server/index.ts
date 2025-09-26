@@ -352,7 +352,10 @@ router.post("/api/tryon/log", async (ctx) => {
 // POST /api/tryon/save
 router.post("/api/tryon/save", async (ctx) => {
   try {
-    const body = ctx.request.body as { shop?: string; products?: Array<{ id: string; title?: string; handle?: string }> };
+    const body = ctx.request.body as {
+      shop?: string;
+      products?: Array<{ id: string; title?: string; handle?: string }>;
+    };
     const shop = body.shop ?? String(ctx.query.shop ?? "");
     const products = Array.isArray(body.products) ? body.products : [];
 
@@ -362,18 +365,66 @@ router.post("/api/tryon/save", async (ctx) => {
       return;
     }
 
-    // Guarda en DB (prisma). Ajusta el modelo según tu esquema.
-    // Ejemplo simple: crear un registro con JSON
-    const record = await prisma.tryOnSelection.create({
-      data: {
-        shop,
-        productsJson: JSON.stringify(products),
-      },
+    const serialized = JSON.stringify(products);
+
+    const existing = await prisma.tryOnSelection.findFirst({
+      where: { shop },
+      orderBy: { createdAt: "desc" },
     });
 
-    ctx.body = { ok: true, id: record.id };
+    if (existing) {
+      await prisma.tryOnSelection.update({
+        where: { id: existing.id },
+        data: { productsJson: serialized },
+      });
+      ctx.body = { ok: true, id: existing.id, updated: true };
+    } else {
+      const record = await prisma.tryOnSelection.create({
+        data: {
+          shop,
+          productsJson: serialized,
+        },
+      });
+
+      ctx.body = { ok: true, id: record.id, created: true };
+    }
   } catch (e) {
     console.error("❌ /api/tryon/save error:", e);
+    ctx.status = 500;
+    ctx.body = { error: "Internal error", detail: String(e?.message ?? e) };
+  }
+});
+
+router.get("/api/tryon/selection", async (ctx) => {
+  const shop = String(ctx.query.shop ?? "").trim();
+
+  if (!shop) {
+    ctx.status = 400;
+    ctx.body = { error: "Missing shop" };
+    return;
+  }
+
+  try {
+    const existing = await prisma.tryOnSelection.findFirst({
+      where: { shop },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (!existing) {
+      ctx.body = { shop, products: [] };
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(existing.productsJson ?? "[]");
+      ctx.body = { shop, products: Array.isArray(parsed) ? parsed : [] };
+    } catch (err) {
+      console.error("❌ /api/tryon/selection parse error:", err);
+      ctx.status = 500;
+      ctx.body = { error: "Invalid stored selection" };
+    }
+  } catch (e) {
+    console.error("❌ /api/tryon/selection error:", e);
     ctx.status = 500;
     ctx.body = { error: "Internal error", detail: String(e?.message ?? e) };
   }
@@ -404,11 +455,33 @@ router.get("/api/products", async (ctx) => {
     // Si pasas ?debug=1 hago una query mínima, útil para aislar el problema de permisos/campos
     const minimal = String(ctx.query.debug || "") === "1";
 
+    const limitParam = Number(ctx.query.limit ?? 20);
+    const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 50) : 20;
+    const direction = String(ctx.query.direction ?? "next") === "prev" ? "prev" : "next";
+    const rawCursor = String(ctx.query.cursor ?? "").trim();
+    const cursor = rawCursor ? rawCursor.replace(/"/g, '\\"') : "";
+
+    const connectionArgs: string[] = [];
+    if (direction === "prev") {
+      connectionArgs.push(`last: ${limit}`);
+      if (cursor) {
+        connectionArgs.push(`before: "${cursor}"`);
+      }
+    } else {
+      connectionArgs.push(`first: ${limit}`);
+      if (cursor) {
+        connectionArgs.push(`after: "${cursor}"`);
+      }
+    }
+
+    const connection = connectionArgs.join(", ");
+
     const query = minimal
       ? `
         query {
-          products(first: 10, sortKey: UPDATED_AT, reverse: true) {
+          products(sortKey: UPDATED_AT, reverse: true, ${connection}) {
             edges {
+              cursor
               node {
                 id
                 title
@@ -417,13 +490,20 @@ router.get("/api/products", async (ctx) => {
                 featuredImage { url altText }
               }
             }
+            pageInfo {
+              hasNextPage
+              hasPreviousPage
+              startCursor
+              endCursor
+            }
           }
         }
       `
       : `
         query {
-          products(first: 20, sortKey: UPDATED_AT, reverse: true) {
+          products(sortKey: UPDATED_AT, reverse: true, ${connection}) {
             edges {
+              cursor
               node {
                 id
                 title
@@ -433,6 +513,12 @@ router.get("/api/products", async (ctx) => {
                 variants(first: 5) { edges { node { id title sku } } }
                 metafields(first: 10, namespace: "internal") { edges { node { key value } } }
               }
+            }
+            pageInfo {
+              hasNextPage
+              hasPreviousPage
+              startCursor
+              endCursor
             }
           }
         }
@@ -466,8 +552,28 @@ router.get("/api/products", async (ctx) => {
       return;
     }
 
-    const nodes = json.data?.products?.edges?.map((e: any) => e.node) ?? [];
-    ctx.body = nodes;
+    const edges = json.data?.products?.edges ?? [];
+    const nodes = edges.map((e: any) => e?.node ?? null).filter(Boolean);
+    const pageInfo = json.data?.products?.pageInfo ?? null;
+
+    ctx.body = {
+      products: nodes,
+      pageInfo: pageInfo && typeof pageInfo === "object"
+        ? {
+            hasNextPage: Boolean(pageInfo.hasNextPage),
+            hasPreviousPage: Boolean(pageInfo.hasPreviousPage),
+            startCursor: pageInfo.startCursor ?? null,
+            endCursor: pageInfo.endCursor ?? null,
+          }
+        : {
+            hasNextPage: false,
+            hasPreviousPage: false,
+            startCursor: null,
+            endCursor: null,
+          },
+      limit,
+      direction,
+    };
   } catch (e: any) {
     console.error("❌ /api/products exception:", e?.message || e);
     ctx.status = 500;
