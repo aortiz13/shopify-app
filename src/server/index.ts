@@ -183,6 +183,8 @@ router.get("/proxy/widget", async (ctx) => {
     ctx.set("Access-Control-Allow-Origin", "*");
     ctx.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     ctx.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    ctx.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    ctx.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
     ctx.status = upstream.status;
     ctx.body = await upstream.text(); // devolvemos el HTML
