@@ -155,6 +155,7 @@ export default function AdminLanding() {
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [hasSavedSelection, setHasSavedSelection] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [shop, setShop] = useState<string>("");
   const [adminHost, setAdminHost] = useState<string>("");
   const [pageInfo, setPageInfo] = useState<PageInfo | null>(null);
@@ -458,6 +459,36 @@ export default function AdminLanding() {
     }
   }, [loadProducts, resolvingShop, shop]);
 
+  useEffect(() => {
+    if (!isModalOpen) return;
+    if (typeof document === "undefined") return;
+
+    const { body } = document;
+    const previousOverflow = body.style.overflow;
+    body.style.overflow = "hidden";
+
+    return () => {
+      body.style.overflow = previousOverflow;
+    };
+  }, [isModalOpen]);
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setIsModalOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isModalOpen]);
+
   const toggleProduct = (id: string) => {
     setSelected((prevSelected) => {
       const isSelected = !!prevSelected[id];
@@ -507,6 +538,32 @@ export default function AdminLanding() {
   );
 
   const busy = loading || resolvingShop;
+
+  const handleOpenModal = () => {
+    setIsModalOpen(true);
+
+    if (!resolvingShop && shop && !loading && products.length === 0) {
+      loadProducts();
+    }
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+  };
+
+  const selectionHint = hasSavedSelection
+    ? "Tu última selección guardada se mostrará en los productos habilitados."
+    : "Guarda tu selección para activar el probador en tu tienda.";
+
+  const statusText = resolvingShop
+    ? "Determinando la tienda…"
+    : loading
+      ? "Cargando productos…"
+      : products.length === 0
+        ? "No se encontraron productos en la última carga."
+        : `Última carga: ${products.length} producto${
+            products.length === 1 ? "" : "s"
+          } · Página ${page}`;
 
   const handleSave = async () => {
     if (!shop) {
@@ -558,7 +615,7 @@ export default function AdminLanding() {
       }
 
       setSavedMessage(
-        `Guardados ${chosen.length} producto${chosen.length === 1 ? "" : "s"}. Continúa con el paso 2 para activar el probador en tu tienda.`,
+        `Guardados ${chosen.length} producto${chosen.length === 1 ? "" : "s"}. Actualiza tu theme para que el probador esté disponible.`,
       );
       setHasSavedSelection(chosen.length > 0);
     } catch (err: any) {
@@ -569,23 +626,6 @@ export default function AdminLanding() {
       setSaving(false);
     }
   };
-
-  const storeSubdomain = useMemo(() => {
-    if (!shop) return "";
-    const suffix = ".myshopify.com";
-    return shop.endsWith(suffix) ? shop.slice(0, -suffix.length) : shop;
-  }, [shop]);
-
-  const themeEditorUrl = useMemo(() => {
-    return storeSubdomain
-      ? `https://admin.shopify.com/store/${storeSubdomain}/themes/current/editor?context=apps`
-      : "https://admin.shopify.com/store";
-  }, [storeSubdomain]);
-
-  const openThemeEditor = useCallback(() => {
-    if (!hasSavedSelection) return;
-    window.open(themeEditorUrl, "_blank", "noopener,noreferrer");
-  }, [hasSavedSelection, themeEditorUrl]);
 
   return (
     <div
@@ -611,257 +651,59 @@ export default function AdminLanding() {
 
       <section
         style={{
+          border: "1px solid #e5e7eb",
+          borderRadius: 16,
+          padding: 24,
+          background: "#ffffff",
           display: "flex",
-          gap: 12,
-          flexWrap: "wrap",
-          alignItems: "center",
+          flexDirection: "column",
+          gap: 20,
         }}
       >
-        <button
-          onClick={selectAll}
-          style={buttonStyle}
-          disabled={busy || products.length === 0}
-        >
-          Seleccionar todos
-        </button>
-        <button
-          onClick={clearAll}
-          style={buttonStyle}
-          disabled={busy || products.length === 0}
-        >
-          Limpiar selección
-        </button>
-        <button
-          onClick={() => loadProducts()}
-          style={buttonStyle}
-          disabled={busy}
-        >
-          {loading
-            ? "Actualizando…"
-            : resolvingShop
-              ? "Resolviendo tienda…"
-              : "Actualizar"}
-        </button>
-        <span style={{ marginLeft: "auto", color: "#6b7280" }}>
-          {resolvingShop
-            ? "Determinando la tienda…"
-            : loading
-              ? "Cargando productos…"
-              : `Página ${page} · ${products.length} producto${products.length === 1 ? "" : "s"}`}
-        </span>
-      </section>
-
-      {error && (
+        <div style={{ color: "#4b5563", maxWidth: 560, lineHeight: 1.5 }}>
+          Administra los productos habilitados para el probador virtual desde el
+          modal. Puedes actualizar la selección cuando lo necesites.
+        </div>
         <div
           style={{
-            background: "#fee2e2",
-            color: "#991b1b",
-            padding: "12px 16px",
-            borderRadius: 8,
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 16,
+            alignItems: "center",
+            justifyContent: "space-between",
           }}
         >
-          {error}
-        </div>
-      )}
-
-      <div
-        style={{
-          border: "1px solid #e5e7eb",
-          borderRadius: 12,
-          overflow: "hidden",
-          boxShadow: "0 1px 2px rgba(15, 23, 42, 0.08)",
-        }}
-      >
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead
+          <div
             style={{
-              background: "#f9fafb",
-              textTransform: "uppercase",
-              fontSize: 12,
-              letterSpacing: 0.4,
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+              minWidth: 220,
             }}
           >
-            <tr>
-              <th style={thStyle}> </th>
-              <th style={thStyle}>Producto</th>
-            </tr>
-          </thead>
-          <tbody>
-            {resolvingShop && (
-              <tr>
-                <td colSpan={2} style={tdStyle}>
-                  Determinando la tienda…
-                </td>
-              </tr>
-            )}
-            {!resolvingShop && loading && (
-              <tr>
-                <td colSpan={2} style={tdStyle}>
-                  Cargando productos…
-                </td>
-              </tr>
-            )}
-            {!resolvingShop && !loading && products.length === 0 && (
-              <tr>
-                <td colSpan={2} style={tdStyle}>
-                  No se encontraron productos.
-                </td>
-              </tr>
-            )}
-            {!resolvingShop &&
-              products.map((product) => {
-                const firstGalleryImage =
-                  product.images?.edges?.find((edge) => edge?.node)?.node ??
-                  null;
-                const mediaPreview =
-                  product.mediaPreviews?.find(
-                    (item) => item?.url || item?.originalSrc,
-                  ) ?? null;
-                const preferredImage = product.thumbnailUrl
-                  ? null
-                  : product.featuredMediaPreview &&
-                      (product.featuredMediaPreview.url ||
-                        product.featuredMediaPreview.originalSrc ||
-                        product.featuredMediaPreview.altText)
-                    ? product.featuredMediaPreview
-                    : product.featuredImage &&
-                        (product.featuredImage.url ||
-                          product.featuredImage.originalSrc ||
-                          product.featuredImage.altText)
-                      ? product.featuredImage
-                      : (mediaPreview ?? firstGalleryImage);
-
-                const resolvedThumbnailUrl =
-                  product.thumbnailUrl ??
-                  preferredImage?.url ??
-                  preferredImage?.originalSrc ??
-                  mediaPreview?.url ??
-                  mediaPreview?.originalSrc ??
-                  firstGalleryImage?.url ??
-                  firstGalleryImage?.originalSrc ??
-                  undefined;
-
-                const resolvedThumbnailAlt =
-                  product.thumbnailAlt ??
-                  preferredImage?.altText ??
-                  mediaPreview?.altText ??
-                  firstGalleryImage?.altText ??
-                  product.title;
-
-                return (
-                  <tr
-                    key={product.id}
-                    style={{ borderTop: "1px solid #f3f4f6" }}
-                  >
-                    <td style={tdStyle}>
-                      <input
-                        type="checkbox"
-                        checked={!!selected[product.id]}
-                        onChange={() => toggleProduct(product.id)}
-                        disabled={busy}
-                      />
-                    </td>
-                    <td style={productCellStyle}>
-                      <div style={imageWrapperStyle}>
-                        {resolvedThumbnailUrl ? (
-                          <img
-                            src={resolvedThumbnailUrl}
-                            alt={resolvedThumbnailAlt}
-                            style={{
-                              width: "100%",
-                              height: "100%",
-                              objectFit: "cover",
-                            }}
-                          />
-                        ) : (
-                          <div style={placeholderStyle} aria-hidden="true">
-                            <span style={{ fontSize: 12, color: "#9ca3af" }}>
-                              Sin imagen
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      <span style={{ fontWeight: 600, color: "#111827" }}>
-                        {product.title}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-          </tbody>
-        </table>
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginTop: 16,
-          gap: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={{ color: "#6b7280", fontSize: 14 }}>
-          {resolvingShop
-            ? "Esperando la tienda para mostrar productos…"
-            : `Mostrando ${products.length} producto${products.length === 1 ? "" : "s"} · Página ${page}`}
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
+            <span style={{ color: "#111827", fontWeight: 600 }}>
+              Productos seleccionados: {selectedCount} producto
+              {selectedCount === 1 ? "" : "s"}
+            </span>
+            <span style={{ color: "#6b7280", fontSize: 14 }}>
+              {selectionHint}
+            </span>
+            <span style={{ color: "#9ca3af", fontSize: 13 }}>{statusText}</span>
+          </div>
           <button
-            onClick={() => {
-              const cursor = currentStartCursorRef.current;
-              if (!cursor) return;
-              loadProducts({ cursor, direction: "prev" });
+            onClick={handleOpenModal}
+            style={{
+              ...primaryButtonStyle,
+              minWidth: 220,
             }}
-            style={buttonStyle}
-            disabled={
-              busy ||
-              !pageInfo?.hasPreviousPage ||
-              !currentStartCursor ||
-              page <= 1
-            }
+            disabled={resolvingShop}
           >
-            Anterior
-          </button>
-          <button
-            onClick={() => {
-              if (!currentEndCursor) return;
-              loadProducts({ cursor: currentEndCursor, direction: "next" });
-            }}
-            style={buttonStyle}
-            disabled={busy || !pageInfo?.hasNextPage || !currentEndCursor}
-          >
-            Siguiente
+            Administrar productos
           </button>
         </div>
-      </div>
+      </section>
 
-      <footer
-        style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          gap: 12,
-          alignItems: "center",
-        }}
-      >
-        <div style={{ color: "#4b5563" }}>
-          {resolvingShop
-            ? "Esperando la tienda..."
-            : selectedCount === 0
-              ? "Selecciona al menos un producto para continuar"
-              : `${selectedCount} producto${selectedCount === 1 ? "" : "s"} seleccionados`}
-        </div>
-        <button
-          onClick={handleSave}
-          style={primaryButtonStyle}
-          disabled={saving || selectedCount === 0 || busy}
-        >
-          {saving ? "Guardando…" : "Guardar selección"}
-        </button>
-      </footer>
-
-      {savedMessage && (
+      {!isModalOpen && savedMessage && (
         <div
           style={{
             background: "#dcfce7",
@@ -874,81 +716,327 @@ export default function AdminLanding() {
         </div>
       )}
 
-      <section
-        style={{
-          marginTop: 32,
-          border: "1px solid #e5e7eb",
-          borderRadius: 16,
-          padding: 24,
-          background: "#f9fafb",
-          display: "flex",
-          flexDirection: "column",
-          gap: 16,
-        }}
-      >
-        <header style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ color: "#6b7280", fontWeight: 600 }}>Paso 2</span>
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>
-            Activa la App en tu Theme
-          </h2>
-          <p style={{ margin: 0, color: "#4b5563", maxWidth: 560 }}>
-            Habilita el bloque de Antia en el Theme Editor para mostrar el botón
-            del probador en la página de producto.
-          </p>
-        </header>
-
-        <ol
-          style={{
-            margin: 0,
-            paddingLeft: 20,
-            color: "#111827",
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-          }}
-        >
-          <li>
-            Abre el Theme Editor (tienda online &gt; Personalizar) y selecciona
-            una página de producto donde quieras activar el probador.
-          </li>
-          <li>
-            En el árbol de secciones, haz clic en{" "}
-            <strong>Agregar bloque</strong> dentro de la sección de producto y
-            elige <strong>Antia Try On Button</strong>.
-          </li>
-          <li>
-            Guarda los cambios. El botón aparecerá automáticamente en los
-            productos seleccionados en el Paso 1.
-          </li>
-        </ol>
-
+      {!isModalOpen && error && (
         <div
           style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 12,
-            alignItems: "center",
-            justifyContent: "space-between",
+            background: "#fee2e2",
+            color: "#991b1b",
+            padding: "12px 16px",
+            borderRadius: 8,
           }}
         >
-          <button
-            onClick={openThemeEditor}
-            style={{
-              ...primaryButtonStyle,
-              background: hasSavedSelection ? "#111827" : "#9ca3af",
-              cursor: hasSavedSelection ? "pointer" : "not-allowed",
-            }}
-            disabled={!hasSavedSelection}
-          >
-            Abrir Theme Editor
-          </button>
-          <span style={{ color: "#6b7280" }}>
-            {hasSavedSelection
-              ? "Selecciona el bloque de Antia en tu theme para finalizar"
-              : "Guarda al menos un producto en el Paso 1 para continuar"}
-          </span>
+          {error}
         </div>
-      </section>
+      )}
+
+      {isModalOpen && (
+        <div
+          style={modalOverlayStyle}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="product-selection-modal-title"
+          onClick={handleCloseModal}
+        >
+          <div
+            style={modalContainerStyle}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div style={modalHeaderStyle}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <h2
+                  id="product-selection-modal-title"
+                  style={{ margin: 0, fontSize: 24, fontWeight: 700 }}
+                >
+                  Selecciona los productos para Try On
+                </h2>
+                <p style={{ margin: 0, color: "#6b7280", maxWidth: 540 }}>
+                  Marca los productos que deseas habilitar en el probador
+                  virtual.
+                </p>
+              </div>
+              <button
+                onClick={handleCloseModal}
+                style={modalCloseButtonStyle}
+                aria-label="Cerrar selección de productos"
+              >
+                ×
+              </button>
+            </div>
+            <div style={modalBodyStyle}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                <button
+                  onClick={selectAll}
+                  style={buttonStyle}
+                  disabled={busy || products.length === 0}
+                >
+                  Seleccionar todos
+                </button>
+                <button
+                  onClick={clearAll}
+                  style={buttonStyle}
+                  disabled={busy || products.length === 0}
+                >
+                  Limpiar selección
+                </button>
+                <button
+                  onClick={() => loadProducts()}
+                  style={buttonStyle}
+                  disabled={busy}
+                >
+                  {loading
+                    ? "Actualizando…"
+                    : resolvingShop
+                      ? "Resolviendo tienda…"
+                      : "Actualizar"}
+                </button>
+                <span style={{ marginLeft: "auto", color: "#6b7280" }}>
+                  {resolvingShop
+                    ? "Determinando la tienda…"
+                    : loading
+                      ? "Cargando productos…"
+                      : `Página ${page} · ${products.length} producto${
+                          products.length === 1 ? "" : "s"
+                        }`}
+                </span>
+              </div>
+
+              {error && (
+                <div
+                  style={{
+                    background: "#fee2e2",
+                    color: "#991b1b",
+                    padding: "12px 16px",
+                    borderRadius: 8,
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+
+              {savedMessage && (
+                <div
+                  style={{
+                    background: "#dcfce7",
+                    color: "#166534",
+                    padding: "12px 16px",
+                    borderRadius: 8,
+                  }}
+                >
+                  {savedMessage}
+                </div>
+              )}
+
+              <div
+                style={{
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 12,
+                  overflow: "hidden",
+                  boxShadow: "0 1px 2px rgba(15, 23, 42, 0.08)",
+                  background: "#ffffff",
+                }}
+              >
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead
+                    style={{
+                      background: "#f9fafb",
+                      textTransform: "uppercase",
+                      fontSize: 12,
+                      letterSpacing: 0.4,
+                    }}
+                  >
+                    <tr>
+                      <th style={thStyle}> </th>
+                      <th style={thStyle}>Producto</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resolvingShop && (
+                      <tr>
+                        <td colSpan={2} style={tdStyle}>
+                          Determinando la tienda…
+                        </td>
+                      </tr>
+                    )}
+                    {!resolvingShop && loading && (
+                      <tr>
+                        <td colSpan={2} style={tdStyle}>
+                          Cargando productos…
+                        </td>
+                      </tr>
+                    )}
+                    {!resolvingShop && !loading && products.length === 0 && (
+                      <tr>
+                        <td colSpan={2} style={tdStyle}>
+                          No se encontraron productos.
+                        </td>
+                      </tr>
+                    )}
+                    {!resolvingShop &&
+                      products.map((product) => {
+                        const firstGalleryImage =
+                          product.images?.edges?.find((edge) => edge?.node)?.node
+                            ?? null;
+                        const mediaPreview =
+                          product.mediaPreviews?.find(
+                            (item) => item?.url || item?.originalSrc,
+                          ) ?? null;
+                        const preferredImage = product.thumbnailUrl
+                          ? null
+                          : product.featuredMediaPreview &&
+                              (product.featuredMediaPreview.url ||
+                                product.featuredMediaPreview.originalSrc ||
+                                product.featuredMediaPreview.altText)
+                            ? product.featuredMediaPreview
+                            : product.featuredImage &&
+                                (product.featuredImage.url ||
+                                  product.featuredImage.originalSrc ||
+                                  product.featuredImage.altText)
+                              ? product.featuredImage
+                              : (mediaPreview ?? firstGalleryImage);
+
+                        const resolvedThumbnailUrl =
+                          product.thumbnailUrl ??
+                          preferredImage?.url ??
+                          preferredImage?.originalSrc ??
+                          mediaPreview?.url ??
+                          mediaPreview?.originalSrc ??
+                          firstGalleryImage?.url ??
+                          firstGalleryImage?.originalSrc ??
+                          undefined;
+
+                        const resolvedThumbnailAlt =
+                          product.thumbnailAlt ??
+                          preferredImage?.altText ??
+                          mediaPreview?.altText ??
+                          firstGalleryImage?.altText ??
+                          product.title;
+
+                        return (
+                          <tr
+                            key={product.id}
+                            style={{ borderTop: "1px solid #f3f4f6" }}
+                          >
+                            <td style={tdStyle}>
+                              <input
+                                type="checkbox"
+                                checked={!!selected[product.id]}
+                                onChange={() => toggleProduct(product.id)}
+                                disabled={busy}
+                              />
+                            </td>
+                            <td style={productCellStyle}>
+                              <div style={imageWrapperStyle}>
+                                {resolvedThumbnailUrl ? (
+                                  <img
+                                    src={resolvedThumbnailUrl}
+                                    alt={resolvedThumbnailAlt}
+                                    style={{
+                                      width: "100%",
+                                      height: "100%",
+                                      objectFit: "cover",
+                                    }}
+                                  />
+                                ) : (
+                                  <div style={placeholderStyle} aria-hidden="true">
+                                    <span style={{ fontSize: 12, color: "#9ca3af" }}>
+                                      Sin imagen
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              <span style={{ fontWeight: 600, color: "#111827" }}>
+                                {product.title}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div style={{ color: "#6b7280", fontSize: 14 }}>
+                  {resolvingShop
+                    ? "Esperando la tienda para mostrar productos…"
+                    : `Mostrando ${products.length} producto${
+                        products.length === 1 ? "" : "s"
+                      } · Página ${page}`}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => {
+                      const cursor = currentStartCursorRef.current;
+                      if (!cursor) return;
+                      loadProducts({ cursor, direction: "prev" });
+                    }}
+                    style={buttonStyle}
+                    disabled={
+                      busy ||
+                      !pageInfo?.hasPreviousPage ||
+                      !currentStartCursor ||
+                      page <= 1
+                    }
+                  >
+                    Anterior
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!currentEndCursor) return;
+                      loadProducts({ cursor: currentEndCursor, direction: "next" });
+                    }}
+                    style={buttonStyle}
+                    disabled={busy || !pageInfo?.hasNextPage || !currentEndCursor}
+                  >
+                    Siguiente
+                  </button>
+                </div>
+              </div>
+
+              <footer
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: 12,
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ color: "#4b5563" }}>
+                  {resolvingShop
+                    ? "Esperando la tienda..."
+                    : selectedCount === 0
+                      ? "Selecciona al menos un producto para continuar"
+                      : `${selectedCount} producto${
+                          selectedCount === 1 ? "" : "s"
+                        } seleccionados`}
+                </div>
+                <button
+                  onClick={handleSave}
+                  style={primaryButtonStyle}
+                  disabled={saving || selectedCount === 0 || busy}
+                >
+                  {saving ? "Guardando…" : "Guardar selección"}
+                </button>
+              </footer>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1010,4 +1098,58 @@ const placeholderStyle: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   background: "#f9fafb",
+};
+
+const modalOverlayStyle: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(15, 23, 42, 0.45)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 24,
+  zIndex: 1000,
+};
+
+const modalContainerStyle: React.CSSProperties = {
+  background: "#ffffff",
+  borderRadius: 20,
+  maxWidth: 960,
+  width: "100%",
+  maxHeight: "90vh",
+  display: "flex",
+  flexDirection: "column",
+  overflow: "hidden",
+  boxShadow: "0 24px 48px rgba(15, 23, 42, 0.25)",
+};
+
+const modalHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "space-between",
+  padding: "24px 24px 16px 24px",
+  gap: 16,
+};
+
+const modalBodyStyle: React.CSSProperties = {
+  padding: "0 24px 24px 24px",
+  display: "flex",
+  flexDirection: "column",
+  gap: 16,
+  overflowY: "auto",
+};
+
+const modalCloseButtonStyle: React.CSSProperties = {
+  border: "none",
+  background: "transparent",
+  fontSize: 24,
+  lineHeight: 1,
+  padding: 0,
+  width: 32,
+  height: 32,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  cursor: "pointer",
+  color: "#6b7280",
 };
