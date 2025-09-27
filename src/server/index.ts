@@ -40,7 +40,7 @@ app.use(bodyParser());
 
 // ----------------------------------------------------
 // CSP UNIFICADO - para permitir embebido en Admin de Shopify
-// y assets propios (Cloudflare Tunnel/no-ngrok)
+// y assets propios (Cloudflare Tunnel)
 // ----------------------------------------------------
 const CSP = [
   "default-src 'self' https:",
@@ -237,6 +237,28 @@ const MEDIA_PREVIEW_FRAGMENTS = `
   }
   ... on Video {
     preview { image { ${SHOPIFY_IMAGE_FIELDS} } }
+  }
+`;
+
+const MEDIA_BASE_SELECTION = `
+  mediaContentType
+  ... on ExternalVideo {
+    preview {
+      image { ${SHOPIFY_IMAGE_FIELDS} }
+    }
+  }
+  ... on Model3d {
+    preview {
+      image { ${SHOPIFY_IMAGE_FIELDS} }
+    }
+  }
+  ... on Video {
+    preview {
+      image { ${SHOPIFY_IMAGE_FIELDS} }
+    }
+  }
+  ... on MediaImage {
+    image { ${SHOPIFY_IMAGE_FIELDS} }
   }
 `;
 
@@ -595,7 +617,7 @@ router.post("/api/tryon/save", async (ctx: Context) => {
 
     const serialized = JSON.stringify(products);
 
-    const existing = await prisma.tryOnSelection.findFirst({
+    const existing = await prisma.TryOnSelection.findFirst({
       where: { shop },
       orderBy: { createdAt: "desc" },
     });
@@ -712,7 +734,7 @@ router.get("/api/tryon/selection", async (ctx) => {
   } catch (e) {
     console.error("❌ /api/tryon/selection error:", e);
     ctx.status = 500;
-    ctx.body = { error: "Internal error", detail: String(e?.message ?? e) };
+   ctx.body = { error: "Internal error", detail: getErrorMessage(e) };
   }
 });
 
@@ -792,6 +814,14 @@ router.get("/api/products", async (ctx: Context) => {
         nodes {
           ${MEDIA_IMAGE_FRAGMENT}
           ${MEDIA_PREVIEW_FRAGMENTS}
+        }
+      }
+      featuredMedia {
+        ${MEDIA_BASE_SELECTION}
+      }
+      media(first: 2) {
+        nodes {
+          ${MEDIA_BASE_SELECTION}
         }
       }
       images(first: 3) { edges { node { ${SHOPIFY_IMAGE_FIELDS} } } }

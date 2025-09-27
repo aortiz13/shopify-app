@@ -35,6 +35,7 @@ model TryOnSelection {
   shop         String
   productsJson String
   createdAt    DateTime @default(now())
-
+  
   @@map("tryOnSelection")
+
 }
