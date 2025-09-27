@@ -1,38 +1,88 @@
 {%- comment -%}
-Bloque del Probador Virtual
-- En tienda real usa App Proxy (/apps/tryon/widget)
-- En editor de temas usa HOST externo (Cloudflare) para evitar el CSP del proxy
+Probador Virtual Widget
+- Detecta automáticamente si está en Theme Editor o tienda real
+- En Theme Editor: usa HOST externo para evitar CSP issues
+- En producción: usa App Proxy local (/apps/tryon/widget)
 {%- endcomment -%}
+
+{%- liquid
+  assign shop_domain = shop.permanent_domain | default: shop.myshopify_domain
+  assign product_id = product.id | default: ''
+  assign button_text = block.settings.button_label | default: 'Probar prenda'
+  assign external_host = block.settings.host | default: 'https://app.adrian-ortiz.com'
+  assign debug_mode = block.settings.debug_mode | default: false
+-%}
 
 <div
   data-tryon-root
-  data-product-id="{{ product.id }}"
-  data-shop="{{ shop.permanent_domain }}"
-  data-button-label="{{ block.settings.button_label | escape }}"
-  data-host="{{ block.settings.host | escape }}"
-></div>
+  data-product-id="{{ product_id }}"
+  data-shop="{{ shop_domain }}"
+  data-button-label="{{ button_text | escape }}"
+  data-host="{{ external_host | escape }}"
+  data-debug="{{ debug_mode }}"
+  class="tryon-widget-container"
+>
+  {%- if product_id == blank -%}
+    <div class="tryon-error-msg">
+      <small style="color: #d73027;">⚠️ Widget del Probador Virtual requiere un producto válido</small>
+    </div>
+  {%- endif -%}
+</div>
 
-<link rel="stylesheet" href="{{ 'tryon-widget.css' | asset_url }}" />
-<script src="{{ 'tryon-widget.js' | asset_url }}" defer></script>
+{%- comment -%} CSS y JS solo se cargan una vez por página {%- endcomment -%}
+{%- unless request.page_type == 'cart' -%}
+  <link rel="stylesheet" href="{{ 'tryon-widget.css' | asset_url }}" />
+  <script src="{{ 'tryon-widget.js' | asset_url }}" defer></script>
+{%- endunless -%}
+
+{%- comment -%} Debug info solo en theme editor {%- endcomment -%}
+{%- if block.settings.debug_mode -%}
+  <div class="tryon-debug" style="margin-top: 8px; padding: 8px; background: #f0f0f0; border-radius: 4px; font-size: 11px; color: #666;">
+    <strong>Debug Info:</strong><br>
+    Shop: {{ shop_domain }}<br>
+    Product ID: {{ product_id }}<br>
+    External Host: {{ external_host }}<br>
+    Button Label: {{ button_text }}
+  </div>
+{%- endif -%}
 
 {% schema %}
 {
   "name": "Probador Virtual",
   "target": "section",
-  "enabled_on": { "templates": ["product"] },
+  "enabled_on": {
+    "templates": ["product"]
+  },
   "settings": [
     {
-      "type": "text",
-      "id": "host",
-      "label": "HOST de la app (Cloudflare/producción)",
-      "info": "Ej: https://app.adrian-ortiz.com",
-      "default": "https://app.adrian-ortiz.com"
+      "type": "paragraph",
+      "content": "Widget que abre un probador virtual. Se adapta automáticamente al contexto (Theme Editor vs Tienda real)."
     },
     {
       "type": "text",
       "id": "button_label",
       "label": "Texto del botón",
-      "default": "Probar prenda"
+      "default": "Probar prenda",
+      "info": "Texto que aparecerá en el botón del probador"
+    },
+    {
+      "type": "url",
+      "id": "host",
+      "label": "HOST externo (Cloudflare/Producción)",
+      "info": "URL de tu app externa, ej: https://app.adrian-ortiz.com",
+      "default": "https://app.adrian-ortiz.com"
+    },
+    {
+      "type": "checkbox",
+      "id": "debug_mode",
+      "label": "Modo Debug",
+      "info": "Muestra información de debug (solo para desarrollo)",
+      "default": false
+    }
+  ],
+  "presets": [
+    {
+      "name": "Probador Virtual"
     }
   ]
 }

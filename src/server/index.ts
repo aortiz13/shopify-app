@@ -39,28 +39,41 @@ app.use(session({ sameSite: "none", secure: true }, app));
 app.use(bodyParser());
 
 // ----------------------------------------------------
-// CSP UNIFICADO - para permitir embebido en Admin de Shopify
+// CSP DINÁMICO - para permitir embebido en Admin de Shopify
 // y assets propios (Cloudflare Tunnel)
 // ----------------------------------------------------
-const CSP = [
-  "default-src 'self' https:",
-  "img-src 'self' data: https:",
-  "style-src 'self' 'unsafe-inline' https:",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:",
-  "font-src 'self' data: https:",
-  "connect-src 'self' https: wss: ws:",
-  "frame-ancestors https://admin.shopify.com https://*.myshopify.com",
-  "frame-src https://admin.shopify.com https://*.myshopify.com https://app.adrian-ortiz.com",
-].join("; ");
-
 app.use(async (ctx, next) => {
-  ctx.set("Content-Security-Policy", CSP);
-  await next();
-});
-
-// Log simple de requests (útil para debug)
-app.use(async (ctx, next) => {
+  // Logging unificado
   console.log("➡️", ctx.method, ctx.path);
+  
+  // CSP dinámico basado en el host
+  const forwardedHost = ctx.headers['x-forwarded-host'];
+  const shopDomain = typeof forwardedHost === 'string' && forwardedHost.includes('.myshopify.com') 
+    ? forwardedHost 
+    : '';
+  
+  const frameAncestors = [
+    "'self'",
+    "https://admin.shopify.com", 
+    "https://*.myshopify.com"
+  ];
+  
+  if (shopDomain) {
+    frameAncestors.push(`https://${shopDomain}`);
+  }
+  
+  const dynamicCSP = [
+    "default-src 'self' https:",
+    "img-src 'self' data: https:",
+    "style-src 'self' 'unsafe-inline' https:",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:",
+    "font-src 'self' data: https:",
+    "connect-src 'self' https: wss: ws:",
+    `frame-ancestors ${frameAncestors.join(' ')}`,
+    "frame-src https://admin.shopify.com https://*.myshopify.com https://app.adrian-ortiz.com https://app.adrian-ortiz.com/picker",
+  ].join("; ");
+  
+  ctx.set("Content-Security-Policy", dynamicCSP);
   await next();
 });
 
@@ -70,20 +83,38 @@ app.use(async (ctx, next) => {
 const NEXT_TARGET = process.env.NEXT_TARGET || "http://127.0.0.1:3000";
 
 /**
- * En koa-proxies NO existe `onProxyRes`.
- * La forma correcta es usar `events.proxyRes` para tocar headers de la respuesta.
- * Importante: NO setear X-Frame-Options; simplemente removerlo.
+ * Proxy events mejorado
  */
 const proxyEvents = {
   proxyRes(proxyRes: any /* IncomingMessage */, _req: any, _res: any) {
     try {
-      proxyRes.headers["content-security-policy"] = CSP;
+      // No setear CSP aquí ya que lo manejamos globalmente
       delete proxyRes.headers["x-frame-options"];
     } catch {
       // no-op
     }
   },
+  error(err: any, _req: any, _res: any) {
+    // Solo registra errores que NO sean de HMR
+    if (!err.message?.includes('webpack-hmr') && !err.message?.includes('ECONNRESET')) {
+      console.log('Proxy error:', err.message);
+    }
+  }
 };
+
+// Proxy específico para HMR (debe ir ANTES de los otros _next)
+app.use(
+  proxy("/_next/webpack-hmr", {
+    target: NEXT_TARGET,
+    changeOrigin: true,
+    logs: false,
+    events: {
+      error() {
+        // Ignora completamente errores de HMR
+      }
+    },
+  }),
+);
 
 // /admin (dashboard embebido) y todo lo que cuelga
 app.use(
@@ -125,7 +156,7 @@ app.use(
   }),
 );
 
-// Ícono (opcional)
+// Icono (opcional)
 app.use(
   proxy("/favicon.ico", {
     target: NEXT_TARGET,
@@ -341,7 +372,7 @@ function sanitizeMediaNodes(media: unknown): SanitizedImage[] {
 }
 
 // ---------------------------------------------------------------------
-// App Proxy: Shopify -> /apps/tryon/widget  →  Tu host -> /proxy/widget
+// App Proxy: Shopify -> /apps/tryon/widget → Tu host -> /proxy/widget
 // Aquí NO usamos koa-proxies para evitar "Http response closed while proxying"
 // ---------------------------------------------------------------------
 router.get("/proxy/widget", async (ctx: Context) => {
@@ -361,15 +392,15 @@ router.get("/proxy/widget", async (ctx: Context) => {
 
     // CSP válida para storefront/admin
     const isDev = process.env.NODE_ENV !== "production";
-    const scriptSrc = isDev ? "'unsafe-inline' 'unsafe-eval' https:" : "https:";
+    const forwardedHost = ctx.headers['x-forwarded-host'];
     const csp = [
       "default-src 'self' https:",
       "img-src 'self' data: https:",
       "style-src 'self' 'unsafe-inline' https:",
-      `script-src 'self' ${scriptSrc}`,
+      `script-src 'self' ${isDev ? "'unsafe-inline' 'unsafe-eval'" : ""} https:`,
       "font-src 'self' data: https:",
       "connect-src 'self' https: wss:",
-      "frame-ancestors https://admin.shopify.com https://*.myshopify.com",
+      `frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com https://${forwardedHost || 'actual-moda-dev.myshopify.com'}`,
       "frame-src https://admin.shopify.com https://*.myshopify.com https://app.adrian-ortiz.com https://app.adrian-ortiz.com/picker",
     ].join("; ");
     ctx.set("Content-Security-Policy", csp);
@@ -381,7 +412,7 @@ router.get("/proxy/widget", async (ctx: Context) => {
     ctx.status = upstream.status;
     ctx.body = await upstream.text(); // devolvemos el HTML
   } catch (e: unknown) {
-    console.error("❌ /proxy/widget error:", e);
+    console.error("⚠️ /proxy/widget error:", e);
     ctx.status = 502;
     ctx.body = "Proxy error";
   }
@@ -402,15 +433,15 @@ router.get("/proxy/picker", async (ctx: Context) => {
     copyUpstreamHeaders(upstream, ctx);
 
     const isDev = process.env.NODE_ENV !== "production";
-    const scriptSrc = isDev ? "'unsafe-inline' 'unsafe-eval' https:" : "https:";
+    const forwardedHost = ctx.headers['x-forwarded-host'];
     const csp = [
       "default-src 'self' https:",
       "img-src 'self' data: https:",
       "style-src 'self' 'unsafe-inline' https:",
-      `script-src 'self' ${scriptSrc}`,
+      `script-src 'self' ${isDev ? "'unsafe-inline' 'unsafe-eval'" : ""} https:`,
       "font-src 'self' data: https:",
       "connect-src 'self' https: wss:",
-      "frame-ancestors https://admin.shopify.com https://*.myshopify.com",
+      `frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com https://${forwardedHost || 'actual-moda-dev.myshopify.com'}`,
       "frame-src https://admin.shopify.com https://*.myshopify.com",
     ].join("; ");
     ctx.set("Content-Security-Policy", csp);
@@ -422,7 +453,7 @@ router.get("/proxy/picker", async (ctx: Context) => {
     ctx.status = upstream.status;
     ctx.body = await upstream.text();
   } catch (e: unknown) {
-    console.error("❌ /proxy/picker error:", e);
+    console.error("⚠️ /proxy/picker error:", e);
     ctx.status = 502;
     ctx.body = "Proxy error";
   }
@@ -534,11 +565,12 @@ router.get("/api/auth/callback", async (ctx: Context) => {
       : "";
     ctx.redirect(`/admin?shop=${encodeURIComponent(sess.shop)}${redirectHost}`);
   } catch (err: unknown) {
-    console.error("❌ Error en callback OAuth:", err);
+    console.error("⚠️ Error en callback OAuth:", err);
     ctx.status = 500;
     ctx.body = "OAuth error";
   }
 });
+
 // ----------------------------------------------------
 // API: Logging del probador virtual
 // POST /api/tryon/log   { shop, productId, action, ... }
@@ -594,11 +626,12 @@ router.post("/api/tryon/log", async (ctx: Context) => {
 
     ctx.body = { ok: true, id: log.id };
   } catch (e: unknown) {
-    console.error("❌ /api/tryon/log error:", e);
+    console.error("⚠️ /api/tryon/log error:", e);
     ctx.status = 500;
     ctx.body = { error: "Internal error", detail: getErrorMessage(e) };
   }
 });
+
 // POST /api/tryon/save
 router.post("/api/tryon/save", async (ctx: Context) => {
   try {
@@ -617,7 +650,7 @@ router.post("/api/tryon/save", async (ctx: Context) => {
 
     const serialized = JSON.stringify(products);
 
-    const existing = await prisma.TryOnSelection.findFirst({
+    const existing = await prisma.tryOnSelection.findFirst({
       where: { shop },
       orderBy: { createdAt: "desc" },
     });
@@ -640,7 +673,7 @@ router.post("/api/tryon/save", async (ctx: Context) => {
     }
   } catch (e) {
     const message = getErrorMessage(e);
-    console.error("❌ /api/tryon/save error:", e);
+    console.error("⚠️ /api/tryon/save error:", e);
     if (message.toLowerCase().includes("readonly")) {
       ctx.status = 500;
       ctx.body = {
@@ -692,49 +725,14 @@ router.get("/api/tryon/selection", async (ctx: Context) => {
       const parsed = JSON.parse(existing.productsJson ?? "[]");
       ctx.body = { shop, products: Array.isArray(parsed) ? parsed : [] };
     } catch (err: unknown) {
-      console.error("❌ /api/tryon/selection parse error:", err);
+      console.error("⚠️ /api/tryon/selection parse error:", err);
       ctx.status = 500;
       ctx.body = { error: "Invalid stored selection" };
     }
   } catch (e: unknown) {
-    console.error("❌ /api/tryon/selection error:", e);
+    console.error("⚠️ /api/tryon/selection error:", e);
     ctx.status = 500;
     ctx.body = { error: "Internal error", detail: getErrorMessage(e) };
-  }
-});
-
-router.get("/api/tryon/selection", async (ctx) => {
-  const shop = String(ctx.query.shop ?? "").trim();
-
-  if (!shop) {
-    ctx.status = 400;
-    ctx.body = { error: "Missing shop" };
-    return;
-  }
-
-  try {
-    const existing = await prisma.tryOnSelection.findFirst({
-      where: { shop },
-      orderBy: { createdAt: "desc" },
-    });
-
-    if (!existing) {
-      ctx.body = { shop, products: [] };
-      return;
-    }
-
-    try {
-      const parsed = JSON.parse(existing.productsJson ?? "[]");
-      ctx.body = { shop, products: Array.isArray(parsed) ? parsed : [] };
-    } catch (err) {
-      console.error("❌ /api/tryon/selection parse error:", err);
-      ctx.status = 500;
-      ctx.body = { error: "Invalid stored selection" };
-    }
-  } catch (e) {
-    console.error("❌ /api/tryon/selection error:", e);
-    ctx.status = 500;
-   ctx.body = { error: "Internal error", detail: getErrorMessage(e) };
   }
 });
 
@@ -768,7 +766,7 @@ router.get("/api/products", async (ctx: Context) => {
     if (!token) {
       // Token offline no encontrado -> pide reinstalar/auth
       ctx.status = 401;
-      ctx.body = { error: "No session for this shop — reinstall the app" };
+      ctx.body = { error: "No session for this shop – reinstall the app" };
       return;
     }
 
@@ -880,7 +878,7 @@ router.get("/api/products", async (ctx: Context) => {
     // Si Shopify devolvió 4xx/5xx, devolvemos ese status y el cuerpo crudo para ver el motivo
     if (!resp.ok) {
       const text = await resp.text();
-      console.error("❌ Admin GraphQL upstream error:", resp.status, text);
+      console.error("⚠️ Admin GraphQL upstream error:", resp.status, text);
       ctx.status = resp.status;
       ctx.body = { error: "Upstream error", status: resp.status, detail: text };
       return;
@@ -890,7 +888,7 @@ router.get("/api/products", async (ctx: Context) => {
 
     if (json.errors) {
       console.error(
-        "❌ Admin GraphQL JSON errors:",
+        "⚠️ Admin GraphQL JSON errors:",
         JSON.stringify(json.errors, null, 2),
       );
       ctx.status = 500;
@@ -966,7 +964,7 @@ router.get("/api/products", async (ctx: Context) => {
       direction,
     };
   } catch (e: unknown) {
-    console.error("❌ /api/products exception:", e);
+    console.error("⚠️ /api/products exception:", e);
     ctx.status = 500;
     ctx.body = { error: "Internal error", detail: getErrorMessage(e) };
   }
