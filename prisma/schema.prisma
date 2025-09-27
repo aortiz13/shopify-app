@@ -8,13 +8,14 @@ generator client {
 }
 
 model ShopSession {
-  shop        String   @id
+  id          Int      @id @default(autoincrement())
+  shop        String   @unique
   accessToken String
-  scope       String
+  scope       String?
   isOnline    Boolean  @default(false)
-  adminHost   String?  @unique
-  updatedAt   DateTime @updatedAt
+  adminHost   String?           // <-- nuevo: el campo que faltaba
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 model TryOnLog {
   id          Int      @id @default(autoincrement())
