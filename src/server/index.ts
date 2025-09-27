@@ -222,6 +222,24 @@ type SanitizedImage = {
 const SHOPIFY_IMAGE_FIELDS =
   "url(transform: {maxWidth: 200, maxHeight: 200, crop: CENTER}) originalSrc altText";
 
+const MEDIA_IMAGE_FRAGMENT = `
+  ... on MediaImage {
+    image { ${SHOPIFY_IMAGE_FIELDS} }
+  }
+`;
+
+const MEDIA_PREVIEW_FRAGMENTS = `
+  ... on ExternalVideo {
+    preview { image { ${SHOPIFY_IMAGE_FIELDS} } }
+  }
+  ... on Model3d {
+    preview { image { ${SHOPIFY_IMAGE_FIELDS} } }
+  }
+  ... on Video {
+    preview { image { ${SHOPIFY_IMAGE_FIELDS} } }
+  }
+`;
+
 function sanitizeImage(image: unknown): SanitizedImage | null {
   if (!image || typeof image !== "object") {
     return null;
@@ -263,13 +281,26 @@ function sanitizeImageEdges(images: unknown): Array<{ node: SanitizedImage }> {
     .filter((value): value is { node: SanitizedImage } => Boolean(value));
 }
 
+function sanitizePreviewImage(preview: unknown): SanitizedImage | null {
+  if (!preview || typeof preview !== "object") {
+    return null;
+  }
+
+  const image = (preview as { image?: unknown }).image;
+  return sanitizeImage(image);
+}
+
 function sanitizeMediaPreview(media: unknown): SanitizedImage | null {
   if (!media || typeof media !== "object") {
     return null;
   }
 
-  const maybePreview = (media as { previewImage?: unknown }).previewImage;
-  return sanitizeImage(maybePreview);
+  const previewImage = sanitizePreviewImage((media as { preview?: unknown }).preview);
+  if (previewImage) {
+    return previewImage;
+  }
+
+  return sanitizeImage((media as { image?: unknown }).image);
 }
 
 function sanitizeMediaNodes(media: unknown): SanitizedImage[] {
@@ -685,41 +716,6 @@ router.get("/api/tryon/selection", async (ctx) => {
   }
 });
 
-router.get("/api/tryon/selection", async (ctx) => {
-  const shop = String(ctx.query.shop ?? "").trim();
-
-  if (!shop) {
-    ctx.status = 400;
-    ctx.body = { error: "Missing shop" };
-    return;
-  }
-
-  try {
-    const existing = await prisma.tryOnSelection.findFirst({
-      where: { shop },
-      orderBy: { createdAt: "desc" },
-    });
-
-    if (!existing) {
-      ctx.body = { shop, products: [] };
-      return;
-    }
-
-    try {
-      const parsed = JSON.parse(existing.productsJson ?? "[]");
-      ctx.body = { shop, products: Array.isArray(parsed) ? parsed : [] };
-    } catch (err) {
-      console.error("❌ /api/tryon/selection parse error:", err);
-      ctx.status = 500;
-      ctx.body = { error: "Invalid stored selection" };
-    }
-  } catch (e) {
-    console.error("❌ /api/tryon/selection error:", e);
-    ctx.status = 500;
-    ctx.body = { error: "Internal error", detail: String(e?.message ?? e) };
-  }
-});
-
 // ----------------------------------------------------
 // API: Productos (Admin GraphQL real) con logs detallados
 // GET /api/products?shop=<shop.myshopify.com>[&debug=1]
@@ -788,8 +784,16 @@ router.get("/api/products", async (ctx: Context) => {
       handle
       updatedAt
       featuredImage { ${SHOPIFY_IMAGE_FIELDS} }
-      featuredMedia { previewImage { ${SHOPIFY_IMAGE_FIELDS} } }
-      media(first: 2) { nodes { previewImage { ${SHOPIFY_IMAGE_FIELDS} } } }
+      featuredMedia {
+        ${MEDIA_IMAGE_FRAGMENT}
+        ${MEDIA_PREVIEW_FRAGMENTS}
+      }
+      media(first: 2) {
+        nodes {
+          ${MEDIA_IMAGE_FRAGMENT}
+          ${MEDIA_PREVIEW_FRAGMENTS}
+        }
+      }
       images(first: 3) { edges { node { ${SHOPIFY_IMAGE_FIELDS} } } }
     `;
 
