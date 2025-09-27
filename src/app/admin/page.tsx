@@ -21,6 +21,12 @@ type Product = {
   cursor?: string | null;
 };
 
+type StoredSelectionProduct = {
+  id?: string | null;
+  title?: string | null;
+  handle?: string | null;
+};
+
 type PageInfo = {
   hasNextPage: boolean;
   hasPreviousPage: boolean;
@@ -196,7 +202,7 @@ export default function AdminLanding() {
         selectionParams.set("host", adminHost);
       }
 
-      let savedProducts: Array<{ id?: string | null }> = [];
+      let savedProducts: StoredSelectionProduct[] = [];
       let selectionApplied = false;
 
       try {
@@ -281,7 +287,7 @@ export default function AdminLanding() {
 
           if (savedProducts.length > 0) {
             const map: Record<string, boolean> = {};
-            savedProducts.forEach((product: { id?: string | null }) => {
+            savedProducts.forEach((product) => {
               if (product?.id) {
                 map[product.id] = true;
               }
@@ -299,33 +305,53 @@ export default function AdminLanding() {
         }
 
         setSelectedDetails((prevDetails) => {
-          if (selectionApplied && savedProducts.length > 0) {
-            const ids = new Set(
-              savedProducts
-                .map((product) => product.id)
-                .filter((id): id is string => Boolean(id))
-            );
+          if (selectionApplied) {
+            if (savedProducts.length === 0) {
+              return {};
+            }
 
             const details: Record<string, Product> = {};
+
+            savedProducts.forEach((product) => {
+              const id = typeof product?.id === "string" ? product.id : null;
+              if (!id) return;
+
+              const previous = prevDetails[id];
+              const normalizedTitle =
+                typeof product?.title === "string" && product.title
+                  ? product.title
+                  : previous?.title ?? "";
+              const normalizedHandle =
+                typeof product?.handle === "string" && product.handle
+                  ? product.handle
+                  : previous?.handle;
+
+              details[id] = {
+                ...(previous ?? {}),
+                id,
+                title: normalizedTitle,
+                handle: normalizedHandle,
+              };
+            });
+
             productList.forEach((product: Product) => {
-              if (ids.has(product.id)) {
-                details[product.id] = product;
+              if (details[product.id]) {
+                details[product.id] = { ...details[product.id], ...product };
               }
             });
+
             return details;
           }
 
-          if (selectionApplied && savedProducts.length === 0) {
-            return {};
-          }
+          const nextDetails: Record<string, Product> = { ...prevDetails };
 
-          const retained: Record<string, Product> = {};
           productList.forEach((product: Product) => {
-            if (prevDetails[product.id]) {
-              retained[product.id] = product;
+            if (nextDetails[product.id]) {
+              nextDetails[product.id] = { ...nextDetails[product.id], ...product };
             }
           });
-          return retained;
+
+          return nextDetails;
         });
       } catch (err: any) {
         console.error("Error loading products", err);
@@ -387,8 +413,8 @@ export default function AdminLanding() {
   };
 
   const selectedCount = useMemo(
-    () => Object.keys(selectedDetails).length,
-    [selectedDetails]
+    () => Object.keys(selected).filter((id) => selected[id]).length,
+    [selected]
   );
 
   const busy = loading || resolvingShop;
@@ -404,7 +430,16 @@ export default function AdminLanding() {
     setError(null);
 
     try {
-      const chosen = Object.values(selectedDetails);
+      const chosen = Object.keys(selected)
+        .filter((id) => selected[id])
+        .map((id) => {
+          const detail = selectedDetails[id];
+          return {
+            id,
+            title: detail?.title,
+            handle: detail?.handle,
+          };
+        });
       const payload: {
         shop: string;
         products: Array<{ id: string; title?: string; handle?: string }>;
@@ -432,7 +467,7 @@ export default function AdminLanding() {
       setSavedMessage(
         `Guardados ${chosen.length} producto${chosen.length === 1 ? "" : "s"}. Continúa con el paso 2 para activar el probador en tu tienda.`,
       );
-      setHasSavedSelection(true);
+      setHasSavedSelection(chosen.length > 0);
     } catch (err: any) {
       console.error("Error saving selection", err);
       const message = getErrorMessage(err) || "Error guardando selección";
