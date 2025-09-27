@@ -5,9 +5,18 @@ import { basename, dirname, resolve } from "node:path";
 
 import { Prisma, PrismaClient } from "@prisma/client";
 
+const FALLBACK_DIR = resolve(os.homedir(), ".shopify-app", "db");
+
 function ensureWritableSqliteDatabase() {
-  const url = process.env.DATABASE_URL;
-  if (!url || !url.startsWith("file:")) {
+  let url = process.env.DATABASE_URL?.trim();
+
+  if (!url) {
+    const defaultPath = resolve(process.cwd(), "prisma/dev.db");
+    url = `file:${defaultPath}`;
+    process.env.DATABASE_URL = url;
+  }
+
+  if (!url?.startsWith("file:")) {
     return;
   }
 
@@ -16,51 +25,101 @@ function ensureWritableSqliteDatabase() {
     return;
   }
 
-  const absolutePath = rawPath.startsWith("/") ? rawPath : resolve(process.cwd(), rawPath);
+  const absolutePath = rawPath.startsWith("/")
+    ? rawPath
+    : resolve(process.cwd(), rawPath);
 
+  if (ensurePathWritable(absolutePath)) {
+    return;
+  }
+
+  const fallbackPath = resolve(
+    FALLBACK_DIR,
+    basename(absolutePath) || "dev.db",
+  );
+  if (!ensureFallbackWritable({ absolutePath, fallbackPath })) {
+    return;
+  }
+
+  process.env.DATABASE_URL = `file:${fallbackPath}`;
+  console.info(`Using writable SQLite database at ${fallbackPath}`);
+}
+
+function ensurePathWritable(targetPath: string): boolean {
   try {
-    const dir = dirname(absolutePath);
+    const dir = dirname(targetPath);
     fs.mkdirSync(dir, { recursive: true });
 
-    if (!fs.existsSync(absolutePath)) {
-      fs.writeFileSync(absolutePath, "");
+    if (!fs.existsSync(targetPath)) {
+      fs.writeFileSync(targetPath, "");
+    }
+
+    try {
+      fs.chmodSync(targetPath, 0o600);
+    } catch (chmodError) {
+      console.warn("Could not update SQLite file permissions", chmodError);
     }
 
     fs.accessSync(dir, fs.constants.W_OK);
-    fs.accessSync(absolutePath, fs.constants.W_OK);
+    fs.accessSync(targetPath, fs.constants.W_OK);
 
-    // `fs.access` is not always enough to detect read-only mounts (e.g. macOS
-    // volumes shared via Docker). Attempt opening the file for read/write to
-    // ensure the database can actually be written to; otherwise we'll fall back
-    // to the tmp copy below.
-    const handle = fs.openSync(absolutePath, fs.constants.O_RDWR);
+    const handle = fs.openSync(targetPath, fs.constants.O_RDWR);
     fs.closeSync(handle);
-    return;
+    return true;
   } catch (error) {
-    console.warn("SQLite database is not writable, preparing a tmp copy.", error);
+    console.warn("SQLite database is not writable", { targetPath, error });
+    return false;
   }
+}
+
+function ensureFallbackWritable(params: {
+  absolutePath: string;
+  fallbackPath: string;
+}): boolean {
+  const { absolutePath, fallbackPath } = params;
 
   try {
-    const tmpDir = resolve(os.tmpdir(), "shopify-app-db");
-    fs.mkdirSync(tmpDir, { recursive: true });
-    const fallbackPath = resolve(tmpDir, basename(absolutePath));
+    fs.mkdirSync(dirname(fallbackPath), { recursive: true });
 
-    if (fs.existsSync(absolutePath)) {
-      try {
-        fs.copyFileSync(absolutePath, fallbackPath);
-      } catch (copyError) {
-        console.warn("Could not copy SQLite database, creating a blank file instead.", copyError);
+    const fallbackExists = fs.existsSync(fallbackPath);
+
+    if (!fallbackExists) {
+      if (fs.existsSync(absolutePath)) {
+        try {
+          fs.copyFileSync(absolutePath, fallbackPath);
+        } catch (copyError) {
+          console.warn(
+            "Could not copy SQLite database, creating a blank file instead.",
+            copyError,
+          );
+          fs.writeFileSync(fallbackPath, "");
+        }
+      } else {
         fs.writeFileSync(fallbackPath, "");
       }
-    } else {
-      fs.writeFileSync(fallbackPath, "");
     }
 
-    fs.chmodSync(fallbackPath, 0o600);
-    process.env.DATABASE_URL = `file:${fallbackPath}`;
-    console.info(`Using writable SQLite database at ${fallbackPath}`);
-  } catch (fallbackError) {
-    console.error("Failed to prepare a writable SQLite database", fallbackError);
+    try {
+      fs.chmodSync(fallbackPath, 0o600);
+    } catch (chmodError) {
+      console.warn(
+        "Could not update fallback SQLite file permissions",
+        chmodError,
+      );
+    }
+
+    fs.accessSync(dirname(fallbackPath), fs.constants.W_OK);
+    fs.accessSync(fallbackPath, fs.constants.W_OK);
+
+    const handle = fs.openSync(fallbackPath, fs.constants.O_RDWR);
+    fs.closeSync(handle);
+    return true;
+  } catch (error) {
+    console.error(
+      "Failed to prepare a writable SQLite fallback database",
+      error,
+    );
+    return false;
   }
 }
 
@@ -114,7 +173,10 @@ export async function getShopByAdminHost(adminHost: string) {
   return row?.shop ?? null;
 }
 
-export async function rememberAdminHost(params: { shop: string; adminHost: string }) {
+export async function rememberAdminHost(params: {
+  shop: string;
+  adminHost: string;
+}) {
   const { shop, adminHost } = params;
   try {
     await prisma.shopSession.update({
@@ -124,7 +186,11 @@ export async function rememberAdminHost(params: { shop: string; adminHost: strin
       },
     });
   } catch (error) {
-    console.warn("No se pudo guardar adminHost para la tienda", { shop, adminHost, error });
+    console.warn("No se pudo guardar adminHost para la tienda", {
+      shop,
+      adminHost,
+      error,
+    });
   }
 }
 

@@ -1,7 +1,13 @@
 // src/app/admin/page.tsx
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 type ProductImage = {
   url?: string | null;
@@ -15,10 +21,14 @@ type Product = {
   handle?: string;
   updatedAt?: string;
   featuredImage?: ProductImage | null;
+  featuredMediaPreview?: ProductImage | null;
+  mediaPreviews?: ProductImage[];
   images?: {
     edges?: Array<{ node?: ProductImage | null } | null>;
   } | null;
   cursor?: string | null;
+  thumbnailUrl?: string | null;
+  thumbnailAlt?: string | null;
 };
 
 type StoredSelectionProduct = {
@@ -47,6 +57,30 @@ const getErrorMessage = (err: unknown): string => {
   }
 
   return typeof err === "string" ? err : "Error inesperado";
+};
+
+const parseErrorPayload = (raw: string | null | undefined): string | null => {
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      if (typeof parsed.error === "string" && parsed.error.trim()) {
+        if (typeof parsed.detail === "string" && parsed.detail.trim()) {
+          return `${parsed.error}. ${parsed.detail}`;
+        }
+        return parsed.error;
+      }
+
+      if (typeof parsed.message === "string" && parsed.message.trim()) {
+        return parsed.message;
+      }
+    }
+  } catch {
+    // texto plano, ignoramos
+  }
+
+  return raw;
 };
 
 const STORAGE_PREFIX = "tryon-shop-for-host::";
@@ -81,7 +115,10 @@ const getStoredShopForHost = (host: string): string | null => {
 const decodeHostShop = (hostParam: string): string | null => {
   try {
     const normalized = hostParam.replace(/-/g, "+").replace(/_/g, "/");
-    const padding = normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
+    const padding =
+      normalized.length % 4 === 0
+        ? ""
+        : "=".repeat(4 - (normalized.length % 4));
     const decoded = window.atob(`${normalized}${padding}`);
 
     const directDomain = decoded.match(/([\w-]+\.myshopify\.com)/);
@@ -110,7 +147,9 @@ const decodeHostShop = (hostParam: string): string | null => {
 export default function AdminLanding() {
   const [products, setProducts] = useState<Product[]>([]);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const [selectedDetails, setSelectedDetails] = useState<Record<string, Product>>({});
+  const [selectedDetails, setSelectedDetails] = useState<
+    Record<string, Product>
+  >({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -121,8 +160,12 @@ export default function AdminLanding() {
   const [pageInfo, setPageInfo] = useState<PageInfo | null>(null);
   const [page, setPage] = useState(1);
   const [resolvingShop, setResolvingShop] = useState(true);
-  const [currentStartCursor, setCurrentStartCursor] = useState<string | null>(null);
+  const [currentStartCursor, setCurrentStartCursor] = useState<string | null>(
+    null,
+  );
+  const [currentEndCursor, setCurrentEndCursor] = useState<string | null>(null);
   const currentStartCursorRef = useRef<string | null>(null);
+  const authInProgressRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -140,6 +183,7 @@ export default function AdminLanding() {
       setPage(1);
       setPageInfo(null);
       setCurrentStartCursor(null);
+      setCurrentEndCursor(null);
       currentStartCursorRef.current = null;
       setError(null);
       if (hostParam && value) {
@@ -168,13 +212,18 @@ export default function AdminLanding() {
     }
 
     setResolvingShop(false);
-    setError((prev) => prev ?? "No se pudo determinar la tienda. Reabre la app desde Shopify.");
+    setError(
+      (prev) =>
+        prev ?? "No se pudo determinar la tienda. Reabre la app desde Shopify.",
+    );
   }, []);
 
   const loadProducts = useCallback(
     async (options: { cursor?: string; direction?: "next" | "prev" } = {}) => {
       if (!shop) {
-        setError("No se pudo determinar la tienda. Reabre la app desde Shopify.");
+        setError(
+          "No se pudo determinar la tienda. Reabre la app desde Shopify.",
+        );
         return;
       }
 
@@ -212,22 +261,54 @@ export default function AdminLanding() {
         ]);
 
         if (!productsResp.ok) {
-          const txt = await productsResp.text();
-          throw new Error(txt || `HTTP ${productsResp.status}`);
+          const rawErrorText = await productsResp.text();
+          const parsedErrorMessage = parseErrorPayload(rawErrorText);
+
+          if (productsResp.status === 401 && shop) {
+            const params = new URLSearchParams({ shop });
+            if (adminHost) {
+              params.set("host", adminHost);
+            }
+
+            if (!authInProgressRef.current && typeof window !== "undefined") {
+              authInProgressRef.current = true;
+              const authUrl = `/api/auth?${params.toString()}`;
+              try {
+                if (window.top) {
+                  window.top.location.href = authUrl;
+                } else {
+                  window.location.href = authUrl;
+                }
+              } catch (navError) {
+                console.warn(
+                  "No se pudo redirigir automáticamente a OAuth",
+                  navError,
+                );
+              }
+            }
+
+            throw new Error(
+              parsedErrorMessage ||
+                "No hay una sesión válida para la tienda. Autoriza nuevamente la app desde Shopify.",
+            );
+          }
+
+          throw new Error(parsedErrorMessage || `HTTP ${productsResp.status}`);
         }
 
         const productsJson = await productsResp.json();
         const productList = Array.isArray(productsJson?.products)
           ? productsJson.products
           : Array.isArray(productsJson)
-          ? productsJson
-          : [];
+            ? productsJson
+            : [];
 
         setProducts(productList);
 
         const resolvedDirection =
           typeof productsJson?.direction === "string" &&
-          (productsJson.direction === "prev" || productsJson.direction === "next")
+          (productsJson.direction === "prev" ||
+            productsJson.direction === "next")
             ? (productsJson.direction as "prev" | "next")
             : direction;
 
@@ -243,14 +324,18 @@ export default function AdminLanding() {
             : null;
 
         const firstProductCursor =
-          productList.length > 0 && productList[0]?.cursor ? String(productList[0]?.cursor) : null;
+          productList.length > 0 && productList[0]?.cursor
+            ? String(productList[0]?.cursor)
+            : null;
         const lastProductCursor =
           productList.length > 0 && productList[productList.length - 1]?.cursor
             ? String(productList[productList.length - 1]?.cursor)
             : null;
 
-        const resolvedStartCursor = pageInfoObject?.startCursor ?? firstProductCursor;
-        const resolvedEndCursor = pageInfoObject?.endCursor ?? lastProductCursor;
+        const resolvedStartCursor =
+          pageInfoObject?.startCursor ?? firstProductCursor;
+        const resolvedEndCursor =
+          pageInfoObject?.endCursor ?? lastProductCursor;
 
         if (pageInfoObject) {
           setPageInfo({
@@ -271,6 +356,7 @@ export default function AdminLanding() {
 
         currentStartCursorRef.current = resolvedStartCursor ?? null;
         setCurrentStartCursor(resolvedStartCursor ?? null);
+        setCurrentEndCursor(resolvedEndCursor ?? null);
 
         if (!options.cursor) {
           setPage(1);
@@ -320,7 +406,7 @@ export default function AdminLanding() {
               const normalizedTitle =
                 typeof product?.title === "string" && product.title
                   ? product.title
-                  : previous?.title ?? "";
+                  : (previous?.title ?? "");
               const normalizedHandle =
                 typeof product?.handle === "string" && product.handle
                   ? product.handle
@@ -347,7 +433,10 @@ export default function AdminLanding() {
 
           productList.forEach((product: Product) => {
             if (nextDetails[product.id]) {
-              nextDetails[product.id] = { ...nextDetails[product.id], ...product };
+              nextDetails[product.id] = {
+                ...nextDetails[product.id],
+                ...product,
+              };
             }
           });
 
@@ -360,7 +449,7 @@ export default function AdminLanding() {
         setLoading(false);
       }
     },
-    [adminHost, shop]
+    [adminHost, shop],
   );
 
   useEffect(() => {
@@ -414,7 +503,7 @@ export default function AdminLanding() {
 
   const selectedCount = useMemo(
     () => Object.keys(selected).filter((id) => selected[id]).length,
-    [selected]
+    [selected],
   );
 
   const busy = loading || resolvingShop;
@@ -446,7 +535,11 @@ export default function AdminLanding() {
         host?: string;
       } = {
         shop,
-        products: chosen.map(({ id, title, handle }) => ({ id, title, handle })),
+        products: chosen.map(({ id, title, handle }) => ({
+          id,
+          title,
+          handle,
+        })),
       };
 
       if (adminHost) {
@@ -498,7 +591,8 @@ export default function AdminLanding() {
     <div
       style={{
         padding: 24,
-        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+        fontFamily:
+          "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         display: "flex",
         flexDirection: "column",
         gap: 20,
@@ -506,9 +600,12 @@ export default function AdminLanding() {
     >
       <header style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <p style={{ margin: 0, color: "#6b7280", fontWeight: 600 }}>Paso 1</p>
-        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700 }}>Selecciona los productos para Try On</h1>
+        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700 }}>
+          Selecciona los productos para Try On
+        </h1>
         <p style={{ margin: 0, color: "#4b5563", maxWidth: 540 }}>
-          Elige los productos que quieres habilitar en el probador virtual. Puedes actualizar esta selección en cualquier momento.
+          Elige los productos que quieres habilitar en el probador virtual.
+          Puedes actualizar esta selección en cualquier momento.
         </p>
       </header>
 
@@ -520,26 +617,49 @@ export default function AdminLanding() {
           alignItems: "center",
         }}
       >
-        <button onClick={selectAll} style={buttonStyle} disabled={busy || products.length === 0}>
+        <button
+          onClick={selectAll}
+          style={buttonStyle}
+          disabled={busy || products.length === 0}
+        >
           Seleccionar todos
         </button>
-        <button onClick={clearAll} style={buttonStyle} disabled={busy || products.length === 0}>
+        <button
+          onClick={clearAll}
+          style={buttonStyle}
+          disabled={busy || products.length === 0}
+        >
           Limpiar selección
         </button>
-        <button onClick={() => loadProducts()} style={buttonStyle} disabled={busy}>
-          {loading ? "Actualizando…" : resolvingShop ? "Resolviendo tienda…" : "Actualizar"}
+        <button
+          onClick={() => loadProducts()}
+          style={buttonStyle}
+          disabled={busy}
+        >
+          {loading
+            ? "Actualizando…"
+            : resolvingShop
+              ? "Resolviendo tienda…"
+              : "Actualizar"}
         </button>
         <span style={{ marginLeft: "auto", color: "#6b7280" }}>
           {resolvingShop
             ? "Determinando la tienda…"
             : loading
-            ? "Cargando productos…"
-            : `Página ${page} · ${products.length} producto${products.length === 1 ? "" : "s"}`}
+              ? "Cargando productos…"
+              : `Página ${page} · ${products.length} producto${products.length === 1 ? "" : "s"}`}
         </span>
       </section>
 
       {error && (
-        <div style={{ background: "#fee2e2", color: "#991b1b", padding: "12px 16px", borderRadius: 8 }}>
+        <div
+          style={{
+            background: "#fee2e2",
+            color: "#991b1b",
+            padding: "12px 16px",
+            borderRadius: 8,
+          }}
+        >
           {error}
         </div>
       )}
@@ -553,7 +673,14 @@ export default function AdminLanding() {
         }}
       >
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead style={{ background: "#f9fafb", textTransform: "uppercase", fontSize: 12, letterSpacing: 0.4 }}>
+          <thead
+            style={{
+              background: "#f9fafb",
+              textTransform: "uppercase",
+              fontSize: 12,
+              letterSpacing: 0.4,
+            }}
+          >
             <tr>
               <th style={thStyle}> </th>
               <th style={thStyle}>Producto</th>
@@ -584,25 +711,48 @@ export default function AdminLanding() {
             {!resolvingShop &&
               products.map((product) => {
                 const firstGalleryImage =
-                  product.images?.edges?.find((edge) => edge?.node)?.node ?? null;
-                const preferredImage =
-                  product.featuredImage &&
-                  (product.featuredImage.url ||
-                    product.featuredImage.originalSrc ||
-                    product.featuredImage.altText)
-                    ? product.featuredImage
-                    : firstGalleryImage;
-                const imageUrl =
+                  product.images?.edges?.find((edge) => edge?.node)?.node ??
+                  null;
+                const mediaPreview =
+                  product.mediaPreviews?.find(
+                    (item) => item?.url || item?.originalSrc,
+                  ) ?? null;
+                const preferredImage = product.thumbnailUrl
+                  ? null
+                  : product.featuredMediaPreview &&
+                      (product.featuredMediaPreview.url ||
+                        product.featuredMediaPreview.originalSrc ||
+                        product.featuredMediaPreview.altText)
+                    ? product.featuredMediaPreview
+                    : product.featuredImage &&
+                        (product.featuredImage.url ||
+                          product.featuredImage.originalSrc ||
+                          product.featuredImage.altText)
+                      ? product.featuredImage
+                      : (mediaPreview ?? firstGalleryImage);
+
+                const resolvedThumbnailUrl =
+                  product.thumbnailUrl ??
                   preferredImage?.url ??
                   preferredImage?.originalSrc ??
+                  mediaPreview?.url ??
+                  mediaPreview?.originalSrc ??
                   firstGalleryImage?.url ??
                   firstGalleryImage?.originalSrc ??
                   undefined;
-                const imageAlt =
-                  preferredImage?.altText ?? firstGalleryImage?.altText ?? product.title;
+
+                const resolvedThumbnailAlt =
+                  product.thumbnailAlt ??
+                  preferredImage?.altText ??
+                  mediaPreview?.altText ??
+                  firstGalleryImage?.altText ??
+                  product.title;
 
                 return (
-                  <tr key={product.id} style={{ borderTop: "1px solid #f3f4f6" }}>
+                  <tr
+                    key={product.id}
+                    style={{ borderTop: "1px solid #f3f4f6" }}
+                  >
                     <td style={tdStyle}>
                       <input
                         type="checkbox"
@@ -611,25 +761,33 @@ export default function AdminLanding() {
                         disabled={busy}
                       />
                     </td>
-                  <td style={productCellStyle}>
-                    <div style={imageWrapperStyle}>
-                      {imageUrl ? (
-                        <img
-                          src={imageUrl}
-                          alt={imageAlt}
-                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                        />
-                      ) : (
-                        <div style={placeholderStyle} aria-hidden="true">
-                          <span style={{ fontSize: 12, color: "#9ca3af" }}>Sin imagen</span>
-                        </div>
-                      )}
-                    </div>
-                    <span style={{ fontWeight: 600, color: "#111827" }}>{product.title}</span>
-                  </td>
-                </tr>
-              );
-            })}
+                    <td style={productCellStyle}>
+                      <div style={imageWrapperStyle}>
+                        {resolvedThumbnailUrl ? (
+                          <img
+                            src={resolvedThumbnailUrl}
+                            alt={resolvedThumbnailAlt}
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "cover",
+                            }}
+                          />
+                        ) : (
+                          <div style={placeholderStyle} aria-hidden="true">
+                            <span style={{ fontSize: 12, color: "#9ca3af" }}>
+                              Sin imagen
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <span style={{ fontWeight: 600, color: "#111827" }}>
+                        {product.title}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
           </tbody>
         </table>
       </div>
@@ -657,27 +815,42 @@ export default function AdminLanding() {
               loadProducts({ cursor, direction: "prev" });
             }}
             style={buttonStyle}
-            disabled={busy || !pageInfo?.hasPreviousPage || !currentStartCursor || page <= 1}
+            disabled={
+              busy ||
+              !pageInfo?.hasPreviousPage ||
+              !currentStartCursor ||
+              page <= 1
+            }
           >
             Anterior
           </button>
           <button
-            onClick={() => loadProducts({ cursor: pageInfo?.endCursor ?? undefined, direction: "next" })}
+            onClick={() => {
+              if (!currentEndCursor) return;
+              loadProducts({ cursor: currentEndCursor, direction: "next" });
+            }}
             style={buttonStyle}
-            disabled={busy || !pageInfo?.hasNextPage || !pageInfo?.endCursor}
+            disabled={busy || !pageInfo?.hasNextPage || !currentEndCursor}
           >
             Siguiente
           </button>
         </div>
       </div>
 
-      <footer style={{ display: "flex", justifyContent: "flex-end", gap: 12, alignItems: "center" }}>
+      <footer
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          gap: 12,
+          alignItems: "center",
+        }}
+      >
         <div style={{ color: "#4b5563" }}>
           {resolvingShop
             ? "Esperando la tienda..."
             : selectedCount === 0
-            ? "Selecciona al menos un producto para continuar"
-            : `${selectedCount} producto${selectedCount === 1 ? "" : "s"} seleccionados`}
+              ? "Selecciona al menos un producto para continuar"
+              : `${selectedCount} producto${selectedCount === 1 ? "" : "s"} seleccionados`}
         </div>
         <button
           onClick={handleSave}
@@ -715,21 +888,37 @@ export default function AdminLanding() {
       >
         <header style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span style={{ color: "#6b7280", fontWeight: 600 }}>Paso 2</span>
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Activa la App en tu Theme</h2>
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>
+            Activa la App en tu Theme
+          </h2>
           <p style={{ margin: 0, color: "#4b5563", maxWidth: 560 }}>
-            Habilita el bloque de Antia en el Theme Editor para mostrar el botón del probador en la página de producto.
+            Habilita el bloque de Antia en el Theme Editor para mostrar el botón
+            del probador en la página de producto.
           </p>
         </header>
 
-        <ol style={{ margin: 0, paddingLeft: 20, color: "#111827", display: "flex", flexDirection: "column", gap: 8 }}>
+        <ol
+          style={{
+            margin: 0,
+            paddingLeft: 20,
+            color: "#111827",
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
           <li>
-            Abre el Theme Editor (tienda online &gt; Personalizar) y selecciona una página de producto donde quieras activar el probador.
+            Abre el Theme Editor (tienda online &gt; Personalizar) y selecciona
+            una página de producto donde quieras activar el probador.
           </li>
           <li>
-            En el árbol de secciones, haz clic en <strong>Agregar bloque</strong> dentro de la sección de producto y elige <strong>Antia Try On Button</strong>.
+            En el árbol de secciones, haz clic en{" "}
+            <strong>Agregar bloque</strong> dentro de la sección de producto y
+            elige <strong>Antia Try On Button</strong>.
           </li>
           <li>
-            Guarda los cambios. El botón aparecerá automáticamente en los productos seleccionados en el Paso 1.
+            Guarda los cambios. El botón aparecerá automáticamente en los
+            productos seleccionados en el Paso 1.
           </li>
         </ol>
 

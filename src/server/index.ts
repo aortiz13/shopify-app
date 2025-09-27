@@ -179,11 +179,18 @@ function normalizeHostParam(value: unknown): string {
   return value.trim();
 }
 
-async function resolveShopFromParams(params: { shop?: unknown; host?: unknown }) {
+async function resolveShopFromParams(params: {
+  shop?: unknown;
+  host?: unknown;
+}) {
   const shopParam = normalizeShopParam(params.shop);
   if (shopParam) {
     const hostParam = normalizeHostParam(params.host);
-    return { shop: shopParam, from: "shop" as const, host: hostParam || undefined };
+    return {
+      shop: shopParam,
+      from: "shop" as const,
+      host: hostParam || undefined,
+    };
   }
 
   const hostParam = normalizeHostParam(params.host);
@@ -204,6 +211,80 @@ async function persistAdminHostIfNeeded(shop: string, host?: string) {
   if (!adminHost) return;
 
   await rememberAdminHost({ shop, adminHost });
+}
+
+type SanitizedImage = {
+  url: string | null;
+  originalSrc: string | null;
+  altText: string | null;
+};
+
+const SHOPIFY_IMAGE_FIELDS =
+  "url(transform: {maxWidth: 200, maxHeight: 200, crop: CENTER}) originalSrc altText";
+
+function sanitizeImage(image: unknown): SanitizedImage | null {
+  if (!image || typeof image !== "object") {
+    return null;
+  }
+
+  const maybeRecord = image as Record<string, unknown>;
+  const url = typeof maybeRecord.url === "string" ? maybeRecord.url : null;
+  const originalSrc =
+    typeof maybeRecord.originalSrc === "string"
+      ? maybeRecord.originalSrc
+      : null;
+  const altText =
+    typeof maybeRecord.altText === "string" ? maybeRecord.altText : null;
+
+  if (!url && !originalSrc && !altText) {
+    return null;
+  }
+
+  return { url, originalSrc, altText };
+}
+
+function sanitizeImageEdges(images: unknown): Array<{ node: SanitizedImage }> {
+  if (!images || typeof images !== "object") {
+    return [];
+  }
+
+  const edges = (images as { edges?: unknown }).edges;
+  if (!Array.isArray(edges)) {
+    return [];
+  }
+
+  return edges
+    .map((edge) => {
+      if (!edge || typeof edge !== "object") return null;
+      const node = (edge as { node?: unknown }).node;
+      const sanitized = sanitizeImage(node);
+      return sanitized ? { node: sanitized } : null;
+    })
+    .filter((value): value is { node: SanitizedImage } => Boolean(value));
+}
+
+function sanitizeMediaPreview(media: unknown): SanitizedImage | null {
+  if (!media || typeof media !== "object") {
+    return null;
+  }
+
+  const maybePreview = (media as { previewImage?: unknown }).previewImage;
+  return sanitizeImage(maybePreview);
+}
+
+function sanitizeMediaNodes(media: unknown): SanitizedImage[] {
+  if (!media || typeof media !== "object") {
+    return [];
+  }
+
+  const nodes = (media as { nodes?: unknown }).nodes;
+  if (!Array.isArray(nodes)) {
+    return [];
+  }
+
+  return nodes
+    .map((node) => sanitizeMediaPreview(node))
+    .filter((value): value is SanitizedImage => Boolean(value));
 }
 
 // ---------------------------------------------------------------------
@@ -294,7 +375,6 @@ router.get("/proxy/picker", async (ctx: Context) => {
   }
 });
 
-
 // ----------------------------------------------------
 // Rutas utilitarias
 // ----------------------------------------------------
@@ -373,9 +453,7 @@ router.get("/api/auth/callback", async (ctx: Context) => {
     }
 
     // Normalizar scope (puede venir undefined)
-    const scope = String(
-      sess.scope || process.env.SCOPES || "",
-    );
+    const scope = String(sess.scope || process.env.SCOPES || "");
 
     if (!sess.accessToken) {
       throw new Error("Missing access token in Shopify session");
@@ -398,7 +476,9 @@ router.get("/api/auth/callback", async (ctx: Context) => {
     });
 
     // Tras OAuth, redirigir al dashboard embebido
-    const redirectHost = hostParam ? `&host=${encodeURIComponent(hostParam)}` : "";
+    const redirectHost = hostParam
+      ? `&host=${encodeURIComponent(hostParam)}`
+      : "";
     ctx.redirect(`/admin?shop=${encodeURIComponent(sess.shop)}${redirectHost}`);
   } catch (err: unknown) {
     console.error("❌ Error en callback OAuth:", err);
@@ -448,7 +528,15 @@ router.post("/api/tryon/log", async (ctx: Context) => {
     }
 
     const log = await prisma.tryOnLog.create({
-      data: { shop: resolvedShop, productId, externalId, variantId, customerId, action, metadata },
+      data: {
+        shop: resolvedShop,
+        productId,
+        externalId,
+        variantId,
+        customerId,
+        action,
+        metadata,
+      },
     });
 
     ctx.body = { ok: true, id: log.id };
@@ -530,7 +618,10 @@ router.get("/api/tryon/selection", async (ctx: Context) => {
   }
 
   if (resolution.from) {
-    await persistAdminHostIfNeeded(shop, resolution.host ?? normalizeHostParam(ctx.query.host));
+    await persistAdminHostIfNeeded(
+      shop,
+      resolution.host ?? normalizeHostParam(ctx.query.host),
+    );
   }
 
   try {
@@ -647,7 +738,10 @@ router.get("/api/products", async (ctx: Context) => {
   }
 
   if (resolution.from) {
-    await persistAdminHostIfNeeded(shop, resolution.host ?? normalizeHostParam(ctx.query.host));
+    await persistAdminHostIfNeeded(
+      shop,
+      resolution.host ?? normalizeHostParam(ctx.query.host),
+    );
   }
 
   try {
@@ -664,8 +758,12 @@ router.get("/api/products", async (ctx: Context) => {
     const minimal = String(ctx.query.debug || "") === "1";
 
     const limitParam = Number(ctx.query.limit ?? 20);
-    const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 50) : 20;
-    const direction = String(ctx.query.direction ?? "next") === "prev" ? "prev" : "next";
+    const limit =
+      Number.isFinite(limitParam) && limitParam > 0
+        ? Math.min(limitParam, 50)
+        : 20;
+    const direction =
+      String(ctx.query.direction ?? "next") === "prev" ? "prev" : "next";
     const rawCursor = String(ctx.query.cursor ?? "").trim();
     const cursor = rawCursor ? rawCursor.replace(/"/g, '\\"') : "";
 
@@ -684,6 +782,17 @@ router.get("/api/products", async (ctx: Context) => {
 
     const connection = connectionArgs.join(", ");
 
+    const baseProductFields = `
+      id
+      title
+      handle
+      updatedAt
+      featuredImage { ${SHOPIFY_IMAGE_FIELDS} }
+      featuredMedia { previewImage { ${SHOPIFY_IMAGE_FIELDS} } }
+      media(first: 2) { nodes { previewImage { ${SHOPIFY_IMAGE_FIELDS} } } }
+      images(first: 3) { edges { node { ${SHOPIFY_IMAGE_FIELDS} } } }
+    `;
+
     const query = minimal
       ? `
         query {
@@ -691,12 +800,7 @@ router.get("/api/products", async (ctx: Context) => {
             edges {
               cursor
               node {
-                id
-                title
-                handle
-                updatedAt
-                featuredImage { url originalSrc altText }
-                images(first: 1) { edges { node { url originalSrc altText } } }
+                ${baseProductFields}
               }
             }
             pageInfo {
@@ -714,12 +818,7 @@ router.get("/api/products", async (ctx: Context) => {
             edges {
               cursor
               node {
-                id
-                title
-                handle
-                updatedAt
-                featuredImage { url originalSrc altText }
-                images(first: 1) { edges { node { url originalSrc altText } } }
+                ${baseProductFields}
                 variants(first: 5) { edges { node { id title sku } } }
                 metafields(first: 10, namespace: "internal") { edges { node { key value } } }
               }
@@ -756,7 +855,10 @@ router.get("/api/products", async (ctx: Context) => {
     const json = (await resp.json()) as any;
 
     if (json.errors) {
-      console.error("❌ Admin GraphQL JSON errors:", JSON.stringify(json.errors, null, 2));
+      console.error(
+        "❌ Admin GraphQL JSON errors:",
+        JSON.stringify(json.errors, null, 2),
+      );
       ctx.status = 500;
       ctx.body = { error: "GraphQL errors", detail: json.errors };
       return;
@@ -766,9 +868,44 @@ router.get("/api/products", async (ctx: Context) => {
     const nodes = edges
       .map((edge: any) => {
         if (!edge?.node) return null;
+
+        const node = edge.node;
+        const featuredImage = sanitizeImage(node.featuredImage);
+        const featuredMediaImage = sanitizeMediaPreview(node.featuredMedia);
+        const mediaImages = sanitizeMediaNodes(node.media);
+        const imageEdges = sanitizeImageEdges(node.images);
+
+        const firstGalleryImage =
+          imageEdges.length > 0 ? (imageEdges[0]?.node ?? null) : null;
+        const firstMediaImage = mediaImages.length > 0 ? mediaImages[0] : null;
+
+        const thumbnailUrl =
+          featuredMediaImage?.url ??
+          featuredImage?.url ??
+          featuredMediaImage?.originalSrc ??
+          featuredImage?.originalSrc ??
+          firstMediaImage?.url ??
+          firstMediaImage?.originalSrc ??
+          firstGalleryImage?.url ??
+          firstGalleryImage?.originalSrc ??
+          null;
+
+        const thumbnailAlt =
+          featuredMediaImage?.altText ??
+          featuredImage?.altText ??
+          firstMediaImage?.altText ??
+          firstGalleryImage?.altText ??
+          (typeof node.title === "string" ? node.title : null);
+
         return {
-          ...edge.node,
+          ...node,
           cursor: edge.cursor ?? null,
+          featuredImage,
+          featuredMediaPreview: featuredMediaImage,
+          mediaPreviews: mediaImages,
+          images: { edges: imageEdges },
+          thumbnailUrl,
+          thumbnailAlt,
         };
       })
       .filter(Boolean);
@@ -777,19 +914,20 @@ router.get("/api/products", async (ctx: Context) => {
     ctx.body = {
       shop,
       products: nodes,
-      pageInfo: pageInfo && typeof pageInfo === "object"
-        ? {
-            hasNextPage: Boolean(pageInfo.hasNextPage),
-            hasPreviousPage: Boolean(pageInfo.hasPreviousPage),
-            startCursor: pageInfo.startCursor ?? null,
-            endCursor: pageInfo.endCursor ?? null,
-          }
-        : {
-            hasNextPage: false,
-            hasPreviousPage: false,
-            startCursor: null,
-            endCursor: null,
-          },
+      pageInfo:
+        pageInfo && typeof pageInfo === "object"
+          ? {
+              hasNextPage: Boolean(pageInfo.hasNextPage),
+              hasPreviousPage: Boolean(pageInfo.hasPreviousPage),
+              startCursor: pageInfo.startCursor ?? null,
+              endCursor: pageInfo.endCursor ?? null,
+            }
+          : {
+              hasNextPage: false,
+              hasPreviousPage: false,
+              startCursor: null,
+              endCursor: null,
+            },
       limit,
       direction,
     };
