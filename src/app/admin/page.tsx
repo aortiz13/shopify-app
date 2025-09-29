@@ -747,7 +747,7 @@ export default function AdminLanding() {
                   id="product-selection-modal-title"
                   style={{ margin: 0, fontSize: 24, fontWeight: 700 }}
                 >
-                  Selecciona los productos para Try On
+                  Selecciona los productos para el Probador
                 </h2>
                 <p style={{ margin: 0, color: "#6b7280", maxWidth: 540 }}>
                   Marca los productos que deseas habilitar en el probador
@@ -835,131 +835,137 @@ export default function AdminLanding() {
 
               <div
                 style={{
+                  flex: 1,
+                  minHeight: 0,
                   border: "1px solid #e5e7eb",
                   borderRadius: 12,
                   overflow: "hidden",
                   boxShadow: "0 1px 2px rgba(15, 23, 42, 0.08)",
-                  background: "#ffffff",
+                  display: "flex",
+                  flexDirection: "column",
                 }}
               >
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead
-                    style={{
-                      background: "#f9fafb",
-                      textTransform: "uppercase",
-                      fontSize: 12,
-                      letterSpacing: 0.4,
-                    }}
-                  >
-                    <tr>
-                      <th style={thStyle}> </th>
-                      <th style={thStyle}>Producto</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {resolvingShop && (
+                <div style={productListScrollStyle}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead
+                      style={{
+                        background: "#f9fafb",
+                        textTransform: "uppercase",
+                        fontSize: 12,
+                        letterSpacing: 0.4,
+                      }}
+                    >
                       <tr>
-                        <td colSpan={2} style={tdStyle}>
-                          Determinando la tienda…
-                        </td>
+                        <th style={thStyle}> </th>
+                        <th style={thStyle}>Producto</th>
                       </tr>
-                    )}
-                    {!resolvingShop && loading && (
-                      <tr>
-                        <td colSpan={2} style={tdStyle}>
-                          Cargando productos…
-                        </td>
-                      </tr>
-                    )}
-                    {!resolvingShop && !loading && products.length === 0 && (
-                      <tr>
-                        <td colSpan={2} style={tdStyle}>
-                          No se encontraron productos.
-                        </td>
-                      </tr>
-                    )}
-                    {!resolvingShop &&
-                      products.map((product) => {
-                        const firstGalleryImage =
-                          product.images?.edges?.find((edge) => edge?.node)?.node
-                            ?? null;
-                        const mediaPreview =
-                          product.mediaPreviews?.find(
-                            (item) => item?.url || item?.originalSrc,
-                          ) ?? null;
-                        const preferredImage = product.thumbnailUrl
-                          ? null
-                          : product.featuredMediaPreview &&
-                              (product.featuredMediaPreview.url ||
-                                product.featuredMediaPreview.originalSrc ||
-                                product.featuredMediaPreview.altText)
-                            ? product.featuredMediaPreview
-                            : product.featuredImage &&
-                                (product.featuredImage.url ||
-                                  product.featuredImage.originalSrc ||
-                                  product.featuredImage.altText)
-                              ? product.featuredImage
-                              : (mediaPreview ?? firstGalleryImage);
+                    </thead>
+                    <tbody>
+                      {resolvingShop && (
+                        <tr>
+                          <td colSpan={2} style={tdStyle}>
+                            Determinando la tienda…
+                          </td>
+                        </tr>
+                      )}
+                      {!resolvingShop && loading && (
+                        <tr>
+                          <td colSpan={2} style={tdStyle}>
+                            Cargando productos…
+                          </td>
+                        </tr>
+                      )}
+                      {!resolvingShop && !loading && products.length === 0 && (
+                        <tr>
+                          <td colSpan={2} style={tdStyle}>
+                            No se encontraron productos.
+                          </td>
+                        </tr>
+                      )}
+                      {!resolvingShop &&
+                        !loading &&
+                        products.map((product) => {
+                          const firstGalleryImage =
+                            product.images?.edges?.find((edge) => edge?.node)?.node ??
+                            null;
+                          const mediaPreview =
+                            product.mediaPreviews?.find(
+                              (item) => item?.url || item?.originalSrc,
+                            ) ?? null;
+                          const preferredImage = product.thumbnailUrl
+                            ? null
+                            : product.featuredMediaPreview &&
+                                (product.featuredMediaPreview.url ||
+                                  product.featuredMediaPreview.originalSrc ||
+                                  product.featuredMediaPreview.altText)
+                              ? product.featuredMediaPreview
+                              : product.featuredImage &&
+                                  (product.featuredImage.url ||
+                                    product.featuredImage.originalSrc ||
+                                    product.featuredImage.altText)
+                                ? product.featuredImage
+                                : (mediaPreview ?? firstGalleryImage);
 
-                        const resolvedThumbnailUrl =
-                          product.thumbnailUrl ??
-                          preferredImage?.url ??
-                          preferredImage?.originalSrc ??
-                          mediaPreview?.url ??
-                          mediaPreview?.originalSrc ??
-                          firstGalleryImage?.url ??
-                          firstGalleryImage?.originalSrc ??
-                          undefined;
+                          const resolvedThumbnailUrl =
+                            product.thumbnailUrl ??
+                            preferredImage?.url ??
+                            preferredImage?.originalSrc ??
+                            mediaPreview?.url ??
+                            mediaPreview?.originalSrc ??
+                            firstGalleryImage?.url ??
+                            firstGalleryImage?.originalSrc ??
+                            undefined;
 
-                        const resolvedThumbnailAlt =
-                          product.thumbnailAlt ??
-                          preferredImage?.altText ??
-                          mediaPreview?.altText ??
-                          firstGalleryImage?.altText ??
-                          product.title;
+                          const resolvedThumbnailAlt =
+                            product.thumbnailAlt ??
+                            preferredImage?.altText ??
+                            mediaPreview?.altText ??
+                            firstGalleryImage?.altText ??
+                            product.title;
 
-                        return (
-                          <tr
-                            key={product.id}
-                            style={{ borderTop: "1px solid #f3f4f6" }}
-                          >
-                            <td style={tdStyle}>
-                              <input
-                                type="checkbox"
-                                checked={!!selected[product.id]}
-                                onChange={() => toggleProduct(product.id)}
-                                disabled={busy}
-                              />
-                            </td>
-                            <td style={productCellStyle}>
-                              <div style={imageWrapperStyle}>
-                                {resolvedThumbnailUrl ? (
-                                  <img
-                                    src={resolvedThumbnailUrl}
-                                    alt={resolvedThumbnailAlt}
-                                    style={{
-                                      width: "100%",
-                                      height: "100%",
-                                      objectFit: "cover",
-                                    }}
-                                  />
-                                ) : (
-                                  <div style={placeholderStyle} aria-hidden="true">
-                                    <span style={{ fontSize: 12, color: "#9ca3af" }}>
-                                      Sin imagen
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                              <span style={{ fontWeight: 600, color: "#111827" }}>
-                                {product.title}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
+                          return (
+                            <tr
+                              key={product.id}
+                              style={{ borderTop: "1px solid #f3f4f6" }}
+                            >
+                              <td style={tdStyle}>
+                                <input
+                                  type="checkbox"
+                                  checked={!!selected[product.id]}
+                                  onChange={() => toggleProduct(product.id)}
+                                  disabled={busy}
+                                />
+                              </td>
+                              <td style={productCellStyle}>
+                                <div style={imageWrapperStyle}>
+                                  {resolvedThumbnailUrl ? (
+                                    <img
+                                      src={resolvedThumbnailUrl}
+                                      alt={resolvedThumbnailAlt}
+                                      style={{
+                                        width: "100%",
+                                        height: "100%",
+                                        objectFit: "cover",
+                                      }}
+                                    />
+                                  ) : (
+                                    <div style={placeholderStyle} aria-hidden="true">
+                                      <span style={{ fontSize: 12, color: "#9ca3af" }}>
+                                        Sin imagen
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                                <span style={{ fontWeight: 600, color: "#111827" }}>
+                                  {product.title}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               <div
@@ -1136,7 +1142,18 @@ const modalBodyStyle: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: 16,
+  flex: 1,
+  minHeight: 0,
+  overflow: "hidden",
+};
+
+const productListScrollStyle: React.CSSProperties = {
   overflowY: "auto",
+  background: "#ffffff",
+  height: "100%",
+  paddingRight: 4,
+  flex: 1,
+  minHeight: 0,
 };
 
 const modalCloseButtonStyle: React.CSSProperties = {
