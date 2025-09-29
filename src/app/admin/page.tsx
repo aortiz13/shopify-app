@@ -641,7 +641,7 @@ export default function AdminLanding() {
       <header style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <p style={{ margin: 0, color: "#6b7280", fontWeight: 600 }}>Paso 1</p>
         <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700 }}>
-          Selecciona los productos para Try On
+          Selecciona los productos para el probador
         </h1>
         <p style={{ margin: 0, color: "#4b5563", maxWidth: 540 }}>
           Elige los productos que quieres habilitar en el probador virtual.
