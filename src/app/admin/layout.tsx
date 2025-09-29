@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 
 const NAV_ITEMS = [
@@ -15,6 +15,8 @@ type AdminLayoutProps = {
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const queryString = searchParams.toString();
 
   return (
     <div
@@ -45,10 +47,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           {NAV_ITEMS.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const href = queryString ? `${item.href}?${queryString}` : item.href;
             return (
               <Link
                 key={item.href}
-                href={item.href}
+                href={href}
                 aria-current={active ? "page" : undefined}
                 style={{
                   display: "flex",
