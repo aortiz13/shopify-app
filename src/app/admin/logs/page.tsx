@@ -30,7 +30,7 @@ export default function LogsAdminPage() {
   }, []);
 
   return (
-    <main style={{ padding: 20, fontFamily: "system-ui, sans-serif" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <h1 style={{ marginBottom: 12 }}>Accesos al Probador</h1>
       {loading ? (
         <p>Cargando…</p>
@@ -58,7 +58,7 @@ export default function LogsAdminPage() {
           </tbody>
         </table>
       )}
-    </main>
+    </div>
   );
 }
 

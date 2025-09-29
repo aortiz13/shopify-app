@@ -1,7 +1,7 @@
 {%- comment -%}
 Probador Virtual Widget
 - Detecta automáticamente si está en Theme Editor o tienda real
-- En Theme Editor: usa HOST externo para evitar CSP issues
+- En Theme Editor: usa HOST externo para evitar CSP issues (por defecto usamos APP_HOST)
 - En producción: usa App Proxy local (/apps/tryon/widget)
 {%- endcomment -%}
 
@@ -66,23 +66,11 @@ Probador Virtual Widget
       "info": "Texto que aparecerá en el botón del probador"
     },
     {
-      "type": "url",
-      "id": "host",
-      "label": "HOST externo (Cloudflare/Producción)",
-      "info": "URL de tu app externa, ej: https://app.adrian-ortiz.com",
-      "default": "https://app.adrian-ortiz.com"
-    },
-    {
       "type": "checkbox",
       "id": "debug_mode",
       "label": "Modo Debug",
       "info": "Muestra información de debug (solo para desarrollo)",
       "default": false
-    }
-  ],
-  "presets": [
-    {
-      "name": "Probador Virtual"
     }
   ]
 }

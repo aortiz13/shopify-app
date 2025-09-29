@@ -632,6 +632,60 @@ router.post("/api/tryon/log", async (ctx: Context) => {
   }
 });
 
+router.get("/api/tryon/logs", async (ctx: Context) => {
+  try {
+    const resolution = await resolveShopFromParams({
+      shop: ctx.query.shop,
+      host: ctx.query.host,
+    });
+
+    const shop = resolution.shop;
+
+    if (!shop) {
+      ctx.status = 400;
+      ctx.body = { error: "Missing shop" };
+      return;
+    }
+
+    if (resolution.from) {
+      await persistAdminHostIfNeeded(
+        shop,
+        resolution.host ?? normalizeHostParam(ctx.query.host),
+      );
+    }
+
+    const limitParam = Array.isArray(ctx.query.limit)
+      ? ctx.query.limit[0]
+      : ctx.query.limit;
+    const limit = Math.min(
+      Math.max(Number(limitParam) || 50, 1),
+      250,
+    );
+
+    const rows = await prisma.tryOnLog.findMany({
+      where: { shop },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
+
+    ctx.body = rows.map((row) => ({
+      id: row.id,
+      shop: row.shop,
+      productId: row.productId,
+      externalId: row.externalId ?? null,
+      variantId: row.variantId ?? null,
+      customerId: row.customerId ?? null,
+      action: row.action,
+      metadata: row.metadata ?? null,
+      createdAt: row.createdAt.toISOString(),
+    }));
+  } catch (e: unknown) {
+    console.error("⚠️ /api/tryon/logs error:", e);
+    ctx.status = 500;
+    ctx.body = { error: "Internal error", detail: getErrorMessage(e) };
+  }
+});
+
 // POST /api/tryon/save
 router.post("/api/tryon/save", async (ctx: Context) => {
   try {
