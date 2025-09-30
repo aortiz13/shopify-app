@@ -21,57 +21,103 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   return (
     <div
       style={{
-        display: "flex",
         minHeight: "100vh",
-        background: "#f9fafb",
+        background: "#f3f4f6",
         color: "#111827",
         fontFamily:
           "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+        display: "flex",
+        flexDirection: "column",
       }}
     >
-      <nav
-        aria-label="Secciones de la aplicación"
+      <header
         style={{
-          width: 240,
-          padding: "32px 20px",
-          borderRight: "1px solid #e5e7eb",
           background: "#ffffff",
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
+          borderBottom: "1px solid #e5e7eb",
+          padding: "16px 32px",
         }}
       >
-        <span style={{ fontSize: 12, textTransform: "uppercase", color: "#6b7280" }}>
-          Panel
-        </span>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {NAV_ITEMS.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-            const href = queryString ? `${item.href}?${queryString}` : item.href;
-            return (
-              <Link
-                key={item.href}
-                href={href}
-                aria-current={active ? "page" : undefined}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  padding: "10px 12px",
-                  borderRadius: 8,
-                  textDecoration: "none",
-                  fontWeight: active ? 600 : 500,
-                  color: active ? "#111827" : "#374151",
-                  background: active ? "#e0f2fe" : "transparent",
-                  transition: "background 0.2s ease, color 0.2s ease",
-                }}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 24,
+            flexWrap: "wrap",
+          }}
+        >
+          <Link
+            href={queryString ? `/admin/productos?${queryString}` : "/admin/productos"}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              textDecoration: "none",
+              color: "#0f172a",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 18,
+                fontWeight: 600,
+                letterSpacing: 0.2,
+              }}
+            >
+              Panel de la app
+            </span>
+          </Link>
+          <nav aria-label="Secciones de la aplicación">
+            <ul
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                listStyle: "none",
+                margin: 0,
+                padding: 0,
+              }}
+            >
+              {NAV_ITEMS.map((item) => {
+                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                const href = queryString ? `${item.href}?${queryString}` : item.href;
+
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={href}
+                      aria-current={active ? "page" : undefined}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "8px 16px",
+                        borderRadius: 9999,
+                        textDecoration: "none",
+                        fontWeight: 500,
+                        fontSize: 14,
+                        color: active ? "#0f172a" : "#475569",
+                        background: active ? "#e0f2fe" : "transparent",
+                        border: active ? "1px solid #bae6fd" : "1px solid transparent",
+                        transition: "background 0.2s ease, color 0.2s ease, border 0.2s ease",
+                      }}
+                    >
+                      {item.label}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
         </div>
-      </nav>
-      <main style={{ flex: 1, padding: "32px 40px" }}>{children}</main>
+      </header>
+      <main
+        style={{
+          flex: 1,
+          padding: "32px 40px",
+        }}
+      >
+        {children}
+      </main>
     </div>
   );
 }
