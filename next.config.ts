@@ -11,92 +11,63 @@ const nextConfig: NextConfig = {
   },
   outputFileTracingRoot: path.join(process.cwd()),
      
-  // Headers para permitir embedding en Shopify
+  // Headers para permitir embedding en Shopify (admin Y storefronts)
   async headers() {
     return [
       {
-        // Ruta existente del picker
         source: '/picker',
         headers: [
           {
-            key: 'X-Frame-Options',
-            value: 'ALLOWALL',
+            key: 'Content-Security-Policy',
+            value: "frame-ancestors https://*.myshopify.com https://admin.shopify.com",
           },
           {
-            key: 'Content-Security-Policy',
-            value: "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com",
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), fullscreen=(), clipboard-read=(), clipboard-write=()',
           },
         ],
       },
       {
-        // 🔥 NUEVA: Ruta del probador virtual
         source: '/widget',
         headers: [
           {
-            key: 'X-Frame-Options',
-            value: 'ALLOWALL',
-          },
-          {
             key: 'Content-Security-Policy',
-            value: "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com",
+            value: "frame-ancestors https://*.myshopify.com https://admin.shopify.com",
           },
           {
             key: 'Permissions-Policy',
-            value: 'camera=(self), microphone=(self), fullscreen=(self), clipboard-read=(self), clipboard-write=(self)',
+            value: 'camera=(), microphone=(), fullscreen=(), clipboard-read=(), clipboard-write=()',
           },
         ],
       },
       {
-        // 🔥 NUEVA: Para todas las sub-rutas del widget (por si acaso)
         source: '/widget/:path*',
         headers: [
           {
-            key: 'X-Frame-Options',
-            value: 'ALLOWALL',
-          },
-          {
             key: 'Content-Security-Policy',
-            value: "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com",
+            value: "frame-ancestors https://*.myshopify.com https://admin.shopify.com",
           },
           {
             key: 'Permissions-Policy',
-            value: 'camera=(self), microphone=(self), fullscreen=(self), clipboard-read=(self), clipboard-write=(self)',
+            value: 'camera=(), microphone=(), fullscreen=(), clipboard-read=(), clipboard-write=()',
           },
         ],
       },
       {
-        // 🔥 NUEVA: Para la ruta específica del tryon-widget
-        source: '/tryon-widget',
+        source: '/admin',
         headers: [
           {
-            key: 'X-Frame-Options',
-            value: 'ALLOWALL',
-          },
-          {
             key: 'Content-Security-Policy',
-            value: "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com",
-          },
-          {
-            key: 'Permissions-Policy',
-            value: 'camera=(self), microphone=(self), fullscreen=(self), clipboard-read=(self), clipboard-write=(self)',
+            value: "frame-ancestors https://*.myshopify.com https://admin.shopify.com",
           },
         ],
       },
       {
-        // 🔥 NUEVA: Para sub-rutas de tryon-widget
-        source: '/tryon-widget/:path*',
+        source: '/admin/:path*',
         headers: [
           {
-            key: 'X-Frame-Options',
-            value: 'ALLOWALL',
-          },
-          {
             key: 'Content-Security-Policy',
-            value: "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com",
-          },
-          {
-            key: 'Permissions-Policy',
-            value: 'camera=(self), microphone=(self), fullscreen=(self), clipboard-read=(self), clipboard-write=(self)',
+            value: "frame-ancestors https://*.myshopify.com https://admin.shopify.com",
           },
         ],
       }

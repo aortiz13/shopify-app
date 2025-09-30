@@ -42,26 +42,15 @@ app.use(bodyParser());
 // CSP DINÁMICO - para permitir embebido en Admin de Shopify
 // y assets propios (Cloudflare Tunnel)
 // ----------------------------------------------------
+// ----------------------------------------------------
+// CSP DINÁMICO - para permitir embebido en Admin de Shopify
+// y storefronts (páginas de producto)
+// ----------------------------------------------------
 app.use(async (ctx, next) => {
   // Logging unificado
   console.log("➡️", ctx.method, ctx.path);
   
-  // CSP dinámico basado en el host
-  const forwardedHost = ctx.headers['x-forwarded-host'];
-  const shopDomain = typeof forwardedHost === 'string' && forwardedHost.includes('.myshopify.com') 
-    ? forwardedHost 
-    : '';
-  
-  const frameAncestors = [
-    "'self'",
-    "https://admin.shopify.com", 
-    "https://*.myshopify.com"
-  ];
-  
-  if (shopDomain) {
-    frameAncestors.push(`https://${shopDomain}`);
-  }
-  
+  // CSP más permisivo para permitir embedding desde storefronts
   const dynamicCSP = [
     "default-src 'self' https:",
     "img-src 'self' data: https:",
@@ -69,11 +58,15 @@ app.use(async (ctx, next) => {
     "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:",
     "font-src 'self' data: https:",
     "connect-src 'self' https: wss: ws:",
-    `frame-ancestors ${frameAncestors.join(' ')}`,
-    "frame-src https://admin.shopify.com https://*.myshopify.com https://app.adrian-ortiz.com https://app.adrian-ortiz.com/picker",
+    "frame-ancestors https://*.myshopify.com https://admin.shopify.com", // Permite admin Y storefronts
+    "frame-src https://admin.shopify.com https://*.myshopify.com https://app.adrian-ortiz.com",
   ].join("; ");
   
   ctx.set("Content-Security-Policy", dynamicCSP);
+  
+  // Añadir Permissions-Policy para resolver las advertencias de camera/microphone
+  ctx.set("Permissions-Policy", "camera=(), microphone=(), fullscreen=(), clipboard-read=(), clipboard-write=()");
+  
   await next();
 });
 
