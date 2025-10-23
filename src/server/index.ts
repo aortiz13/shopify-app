@@ -9,7 +9,6 @@ import type { Context } from "koa";
 import Router from "@koa/router";
 import session from "koa-session";
 import bodyParser from "koa-bodyparser";
-import proxy from "koa-proxies";
 import { shopify } from "./shopify";
 import {
   prisma,
@@ -19,6 +18,25 @@ import {
   saveShopSession,
   rememberAdminHost,
 } from "./db";
+import { cspMiddleware } from "./middleware/csp";
+import { setupProxies, copyUpstreamHeaders, NEXT_TARGET } from "./middleware/proxy";
+import {
+  SHOPIFY_IMAGE_FIELDS,
+  MEDIA_IMAGE_FRAGMENT,
+  MEDIA_PREVIEW_FRAGMENTS,
+  MEDIA_BASE_SELECTION,
+  sanitizeImage,
+  sanitizeImageEdges,
+  sanitizeMediaNodes,
+  type SanitizedImage,
+} from "./services/sanitizers";
+import {
+  normalizeShopParam,
+  normalizeHostParam,
+  resolveShopFromParams,
+  persistAdminHostIfNeeded,
+  getErrorMessage,
+} from "./services/paramResolvers";
 
 // ----------------------------------------------------
 // App base
@@ -38,331 +56,11 @@ app.use(session({ sameSite: "none", secure: true }, app));
 // Body parser para JSON en /api/*
 app.use(bodyParser());
 
-// ----------------------------------------------------
-// CSP DINÁMICO - para permitir embebido en Admin de Shopify
-// y assets propios (Cloudflare Tunnel)
-// ----------------------------------------------------
-// ----------------------------------------------------
-// CSP DINÁMICO - para permitir embebido en Admin de Shopify
-// y storefronts (páginas de producto)
-// ----------------------------------------------------
-app.use(async (ctx, next) => {
-  // Logging unificado
-  console.log("➡️", ctx.method, ctx.path);
-  
-  // CSP más permisivo para permitir embedding desde storefronts
-  const dynamicCSP = [
-    "default-src 'self' https:",
-    "img-src 'self' data: https:",
-    "style-src 'self' 'unsafe-inline' https:",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:",
-    "font-src 'self' data: https:",
-    "connect-src 'self' https: wss: ws:",
-    "frame-ancestors https://*.myshopify.com https://admin.shopify.com", // Permite admin Y storefronts
-    "frame-src https://admin.shopify.com https://*.myshopify.com https://app.adrian-ortiz.com",
-  ].join("; ");
-  
-  ctx.set("Content-Security-Policy", dynamicCSP);
-  
-  // Añadir Permissions-Policy para resolver las advertencias de camera/microphone
-  ctx.set("Permissions-Policy", "camera=(), microphone=(), fullscreen=(), clipboard-read=(), clipboard-write=()");
-  
-  await next();
-});
+// CSP middleware
+app.use(cspMiddleware);
 
-// ----------------------------------------------------
-// Proxies a Next.js (UI) en puerto 3000 (o configurable)
-// ----------------------------------------------------
-const NEXT_TARGET = process.env.NEXT_TARGET || "http://127.0.0.1:3000";
-
-/**
- * Proxy events mejorado
- */
-const proxyEvents = {
-  proxyRes(proxyRes: any /* IncomingMessage */, _req: any, _res: any) {
-    try {
-      // No setear CSP aquí ya que lo manejamos globalmente
-      delete proxyRes.headers["x-frame-options"];
-    } catch {
-      // no-op
-    }
-  },
-  error(err: any, _req: any, _res: any) {
-    // Solo registra errores que NO sean de HMR
-    if (!err.message?.includes('webpack-hmr') && !err.message?.includes('ECONNRESET')) {
-      console.log('Proxy error:', err.message);
-    }
-  }
-};
-
-// Proxy específico para HMR (debe ir ANTES de los otros _next)
-app.use(
-  proxy("/_next/webpack-hmr", {
-    target: NEXT_TARGET,
-    changeOrigin: true,
-    logs: false,
-    events: {
-      error() {
-        // Ignora completamente errores de HMR
-      }
-    },
-  }),
-);
-
-// /admin (dashboard embebido) y todo lo que cuelga
-app.use(
-  proxy(/^\/admin(?:\/.*)?$/, {
-    target: NEXT_TARGET,
-    changeOrigin: true,
-    logs: true,
-    events: proxyEvents,
-  }),
-);
-
-// /widget (UI del selector integrado en la página) y todo lo que cuelga
-app.use(
-  proxy(/^\/widget(?:\/.*)?$/, {
-    target: NEXT_TARGET,
-    changeOrigin: true,
-    logs: true,
-    events: proxyEvents,
-  }),
-);
-
-// Assets/HMR de Next
-app.use(
-  proxy(/^\/_next(?:\/.*)?$/, {
-    target: NEXT_TARGET,
-    changeOrigin: true,
-    logs: true,
-    events: proxyEvents,
-  }),
-);
-
-// Fuentes de Next 15 (Geist)
-app.use(
-  proxy(/^\/__nextjs_font(?:\/.*)?$/, {
-    target: NEXT_TARGET,
-    changeOrigin: true,
-    logs: true,
-    events: proxyEvents,
-  }),
-);
-
-// Icono (opcional)
-app.use(
-  proxy("/favicon.ico", {
-    target: NEXT_TARGET,
-    changeOrigin: true,
-    logs: true,
-    events: proxyEvents,
-  }),
-);
-
-// ----------------------------------------------------
-// Helpers para el proxy manual del App Proxy
-// ----------------------------------------------------
-function copyUpstreamHeaders(resp: Response, ctx: Context) {
-  // Copiamos todos los headers del upstream salvo los hop-by-hop o los que rompen el embed.
-  const skip = new Set([
-    "transfer-encoding",
-    "content-length",
-    "connection",
-    "keep-alive",
-    "x-frame-options",
-    "content-security-policy",
-  ]);
-  resp.headers.forEach((val, key) => {
-    if (!skip.has(key.toLowerCase())) {
-      ctx.set(key, val);
-    }
-  });
-}
-
-function getErrorMessage(err: unknown): string {
-  if (err instanceof Error && typeof err.message === "string") {
-    return err.message;
-  }
-
-  if (err && typeof err === "object" && "message" in err) {
-    const message = (err as { message?: unknown }).message;
-    if (typeof message === "string") {
-      return message;
-    }
-  }
-
-  return typeof err === "string" ? err : String(err);
-}
-
-function normalizeShopParam(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function normalizeHostParam(value: unknown): string {
-  if (typeof value !== "string") return "";
-  return value.trim();
-}
-
-async function resolveShopFromParams(params: {
-  shop?: unknown;
-  host?: unknown;
-}) {
-  const shopParam = normalizeShopParam(params.shop);
-  if (shopParam) {
-    const hostParam = normalizeHostParam(params.host);
-    return {
-      shop: shopParam,
-      from: "shop" as const,
-      host: hostParam || undefined,
-    };
-  }
-
-  const hostParam = normalizeHostParam(params.host);
-  if (!hostParam) {
-    return { shop: "", from: null as const };
-  }
-
-  const found = await getShopByAdminHost(hostParam);
-  if (found) {
-    return { shop: found, from: "host" as const, host: hostParam };
-  }
-
-  return { shop: "", from: "host" as const, host: hostParam };
-}
-
-async function persistAdminHostIfNeeded(shop: string, host?: string) {
-  const adminHost = normalizeHostParam(host);
-  if (!adminHost) return;
-
-  await rememberAdminHost({ shop, adminHost });
-}
-
-type SanitizedImage = {
-  url: string | null;
-  originalSrc: string | null;
-  altText: string | null;
-};
-
-const SHOPIFY_IMAGE_FIELDS =
-  "url(transform: {maxWidth: 200, maxHeight: 200, crop: CENTER}) originalSrc altText";
-
-const MEDIA_IMAGE_FRAGMENT = `
-  ... on MediaImage {
-    image { ${SHOPIFY_IMAGE_FIELDS} }
-  }
-`;
-
-const MEDIA_PREVIEW_FRAGMENTS = `
-  ... on ExternalVideo {
-    preview { image { ${SHOPIFY_IMAGE_FIELDS} } }
-  }
-  ... on Model3d {
-    preview { image { ${SHOPIFY_IMAGE_FIELDS} } }
-  }
-  ... on Video {
-    preview { image { ${SHOPIFY_IMAGE_FIELDS} } }
-  }
-`;
-
-const MEDIA_BASE_SELECTION = `
-  mediaContentType
-  ... on ExternalVideo {
-    preview {
-      image { ${SHOPIFY_IMAGE_FIELDS} }
-    }
-  }
-  ... on Model3d {
-    preview {
-      image { ${SHOPIFY_IMAGE_FIELDS} }
-    }
-  }
-  ... on Video {
-    preview {
-      image { ${SHOPIFY_IMAGE_FIELDS} }
-    }
-  }
-  ... on MediaImage {
-    image { ${SHOPIFY_IMAGE_FIELDS} }
-  }
-`;
-
-function sanitizeImage(image: unknown): SanitizedImage | null {
-  if (!image || typeof image !== "object") {
-    return null;
-  }
-
-  const maybeRecord = image as Record<string, unknown>;
-  const url = typeof maybeRecord.url === "string" ? maybeRecord.url : null;
-  const originalSrc =
-    typeof maybeRecord.originalSrc === "string"
-      ? maybeRecord.originalSrc
-      : null;
-  const altText =
-    typeof maybeRecord.altText === "string" ? maybeRecord.altText : null;
-
-  if (!url && !originalSrc && !altText) {
-    return null;
-  }
-
-  return { url, originalSrc, altText };
-}
-
-function sanitizeImageEdges(images: unknown): Array<{ node: SanitizedImage }> {
-  if (!images || typeof images !== "object") {
-    return [];
-  }
-
-  const edges = (images as { edges?: unknown }).edges;
-  if (!Array.isArray(edges)) {
-    return [];
-  }
-
-  return edges
-    .map((edge) => {
-      if (!edge || typeof edge !== "object") return null;
-      const node = (edge as { node?: unknown }).node;
-      const sanitized = sanitizeImage(node);
-      return sanitized ? { node: sanitized } : null;
-    })
-    .filter((value): value is { node: SanitizedImage } => Boolean(value));
-}
-
-function sanitizePreviewImage(preview: unknown): SanitizedImage | null {
-  if (!preview || typeof preview !== "object") {
-    return null;
-  }
-
-  const image = (preview as { image?: unknown }).image;
-  return sanitizeImage(image);
-}
-
-function sanitizeMediaPreview(media: unknown): SanitizedImage | null {
-  if (!media || typeof media !== "object") {
-    return null;
-  }
-
-  const previewImage = sanitizePreviewImage((media as { preview?: unknown }).preview);
-  if (previewImage) {
-    return previewImage;
-  }
-
-  return sanitizeImage((media as { image?: unknown }).image);
-}
-
-function sanitizeMediaNodes(media: unknown): SanitizedImage[] {
-  if (!media || typeof media !== "object") {
-    return [];
-  }
-
-  const nodes = (media as { nodes?: unknown }).nodes;
-  if (!Array.isArray(nodes)) {
-    return [];
-  }
-
-  return nodes
-    .map((node) => sanitizeMediaPreview(node))
-    .filter((value): value is SanitizedImage => Boolean(value));
-}
+// Configurar proxies a Next.js
+setupProxies(app);
 
 // ---------------------------------------------------------------------
 // App Proxy: Shopify -> /apps/tryon/widget → Tu host -> /proxy/widget
