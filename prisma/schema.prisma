@@ -5,6 +5,8 @@ datasource db {
 
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+  binaryTargets = ["native", "darwin-arm64", "debian-openssl-3.0.x"]
 }
 
 model ShopSession {
