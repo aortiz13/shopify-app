@@ -3,11 +3,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getProviders, signIn, useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
-
-type TryOnProduct = {
-  id: string;
-  name: string;
-};
+import type { TryOnProduct } from "@/types/tryon";
 
 export default function TryOnPopup() {
   const searchParams = useSearchParams();

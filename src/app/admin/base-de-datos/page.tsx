@@ -7,39 +7,7 @@ import {
   rememberShopForHost,
   getStoredShopForHost,
 } from "@/lib/utils/shopParams";
-
-type TryOnLog = {
-  id: number;
-  createdAt: string;
-  productId: string | null;
-  externalId: string | null;
-  variantId: string | null;
-  customerId: string | null;
-  action: string | null;
-  metadata: unknown;
-};
-
-type ParsedLog = TryOnLog & {
-  productName: string;
-  variantName: string;
-  customerName: string;
-  customerPhone: string;
-  additionalDetails: string;
-  customFields: Record<string, string>;
-};
-
-type CustomColumn = {
-  key: string;
-  label: string;
-};
-
-type Filters = {
-  action: string;
-  product: string;
-  search: string;
-  startDate: string;
-  endDate: string;
-};
+import type { TryOnLog, ParsedLog, CustomColumn, LogFilters } from "@/types/tryon";
 
 const LOCAL_STORAGE_COLUMNS_KEY = "tryon-db-custom-columns";
 const LOCAL_STORAGE_NAMESPACE = "tryon-db-columns::";
@@ -174,7 +142,7 @@ export default function BaseDeDatosPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<ParsedLog[]>([]);
-  const [filters, setFilters] = useState<Filters>({
+  const [filters, setFilters] = useState<LogFilters>({
     action: "",
     product: "",
     search: "",
@@ -381,7 +349,7 @@ export default function BaseDeDatosPage() {
       : `Filtrado: ${filteredRows.length} de ${rows.length} interacciones.`;
   }, [filteredRows.length, rows.length, shop]);
 
-  const handleFilterChange = <K extends keyof Filters>(key: K, value: Filters[K]) => {
+  const handleFilterChange = <K extends keyof LogFilters>(key: K, value: LogFilters[K]) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
 

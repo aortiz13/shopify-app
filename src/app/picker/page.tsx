@@ -2,13 +2,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-
-type Product = {
-  id: string;
-  title: string;
-  handle?: string;
-  updatedAt?: string;
-};
+import type { Product } from "@/types/shopify";
 
 export default function PickerPageClient() {
   const [loading, setLoading] = useState(true);

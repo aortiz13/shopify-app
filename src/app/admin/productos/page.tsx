@@ -13,41 +13,7 @@ import {
   rememberShopForHost,
   getStoredShopForHost,
 } from "@/lib/utils/shopParams";
-
-type ProductImage = {
-  url?: string | null;
-  originalSrc?: string | null;
-  altText?: string | null;
-};
-
-type Product = {
-  id: string;
-  title: string;
-  handle?: string;
-  updatedAt?: string;
-  featuredImage?: ProductImage | null;
-  featuredMediaPreview?: ProductImage | null;
-  mediaPreviews?: ProductImage[];
-  images?: {
-    edges?: Array<{ node?: ProductImage | null } | null>;
-  } | null;
-  cursor?: string | null;
-  thumbnailUrl?: string | null;
-  thumbnailAlt?: string | null;
-};
-
-type StoredSelectionProduct = {
-  id?: string | null;
-  title?: string | null;
-  handle?: string | null;
-};
-
-type PageInfo = {
-  hasNextPage: boolean;
-  hasPreviousPage: boolean;
-  startCursor: string | null;
-  endCursor: string | null;
-};
+import type { Product, ProductImage, StoredSelectionProduct, PageInfo } from "@/types/shopify";
 
 const getErrorMessage = (err: unknown): string => {
   if (err instanceof Error && err.message) {

@@ -2,12 +2,7 @@
 "use client";
 
 import React, { useState, useCallback, useEffect, useMemo } from "react";
-
-type PickerProduct = {
-  id?: string | null;
-  title?: string | null;
-  handle?: string | null;
-};
+import type { PickerProduct } from "@/types/tryon";
 
 export default function WidgetPage() {
   const [open, setOpen] = useState(false);
