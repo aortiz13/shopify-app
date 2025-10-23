@@ -68,10 +68,10 @@
   };
 
   // ---- Modal --------------------------------------------------------------
-  const createModal = (iframeSrc) => {
+  const createModal = ({ iframeSrc, fallbackSrc }) => {
     ensureBaseCSS();
 
-    const state = { open: false, loaded: false };
+    const state = { open: false, loaded: false, usingFallback: false };
 
     const backdrop = ce('div', 'tryon-modal__backdrop');
     const wrap = ce('div', 'tryon-modal__wrap');
@@ -86,8 +86,7 @@
 
     const iframe = ce('iframe', 'tryon-iframe');
     iframe.style.display = 'none'; // Oculto hasta que cargue
-    iframe.src = iframeSrc;
-    
+
     // Permisos más específicos para el context
     if (isThemeEditor() || isPreviewMode()) {
       // En theme editor, permisos más restrictivos
@@ -102,7 +101,56 @@
 
     // Handle iframe load/error
     let loadTimeout;
-    
+
+    const showError = (title, message) => {
+      loading.innerHTML = `
+        <div class="tryon-error">
+          <div class="tryon-error__title">${title}</div>
+          <div>${message}</div>
+          <button onclick="this.parentElement.parentElement.parentElement.querySelector('.tryon-modal__close').click()"
+                  style="margin-top:12px;padding:8px 16px;border:1px solid #ddd;background:#fff;border-radius:4px;cursor:pointer;">
+            Cerrar
+          </button>
+        </div>
+      `;
+    };
+
+    const restartLoadTimeout = () => {
+      clearTimeout(loadTimeout);
+
+      const timeoutMs = state.usingFallback ? 8000 : 5000;
+      loadTimeout = setTimeout(() => {
+        if (!state.loaded) {
+          if (fallbackSrc && !state.usingFallback) {
+            state.usingFallback = true;
+            loading.textContent = 'Reconectando probador en modo de compatibilidad...';
+            setIframeSrc(fallbackSrc);
+            return;
+          }
+
+          showError(
+            'Error de configuración',
+            state.usingFallback
+              ? 'No pudimos cargar el probador virtual incluso con el modo de compatibilidad.'
+              : 'El probador no está disponible en el Theme Editor. Funcionará correctamente en la tienda publicada.'
+          );
+        }
+      }, timeoutMs);
+    };
+
+    const setIframeSrc = (src) => {
+      state.loaded = false;
+      if (!state.usingFallback) {
+        loading.textContent = 'Cargando probador virtual...';
+      }
+      loading.style.display = 'flex';
+      iframe.style.display = 'none';
+      iframe.src = src;
+      restartLoadTimeout();
+    };
+
+    setIframeSrc(iframeSrc);
+
     iframe.onload = () => {
       clearTimeout(loadTimeout);
       state.loaded = true;
@@ -112,30 +160,14 @@
 
     iframe.onerror = () => {
       clearTimeout(loadTimeout);
-      showError('Error de conexión', 'No se pudo cargar el probador virtual');
-    };
-
-    // Timeout fallback para detectar CSP blocks
-    loadTimeout = setTimeout(() => {
-      if (!state.loaded) {
-        showError(
-          'Error de configuración', 
-          'El probador no está disponible en el Theme Editor. Funcionará correctamente en la tienda publicada.'
-        );
+      if (fallbackSrc && !state.usingFallback) {
+        state.usingFallback = true;
+        loading.textContent = 'Reconectando probador en modo de compatibilidad...';
+        setIframeSrc(fallbackSrc);
+        return;
       }
-    }, 5000);
 
-    const showError = (title, message) => {
-      loading.innerHTML = `
-        <div class="tryon-error">
-          <div class="tryon-error__title">${title}</div>
-          <div>${message}</div>
-          <button onclick="this.parentElement.parentElement.parentElement.querySelector('.tryon-modal__close').click()" 
-                  style="margin-top:12px;padding:8px 16px;border:1px solid #ddd;background:#fff;border-radius:4px;cursor:pointer;">
-            Cerrar
-          </button>
-        </div>
-      `;
+      showError('Error de conexión', 'No se pudo cargar el probador virtual');
     };
 
     content.appendChild(closeBtn);
@@ -260,12 +292,23 @@
     btn.textContent = label;
     btn.setAttribute('aria-label', `Abrir probador virtual para ${label}`);
 
-    const modal = createModal(iframeSrc);
-    
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      modal.open();
+    const modal = createModal({
+      iframeSrc,
+      fallbackSrc: (isThemeEditor() || isPreviewMode()) && host ? buildIframeSrc({ shop, productId }) : null,
     });
+    
+   btn.addEventListener('click', (e) => {
+  e.preventDefault();
+  
+  // En Theme Editor o Preview Mode, mostrar alerta en lugar de abrir modal
+  if (isThemeEditor() || isPreviewMode()) {
+    alert('✓ Probador Virtual configurado correctamente\n\nEl probador funcionará cuando:\n• Guardes los cambios en el Theme Editor\n• Publiques el theme\n• Visites una página de producto en tu tienda\n\nEn el Theme Editor solo verás esta vista previa.');
+    return;
+  }
+  
+  // En producción: abrir el modal normalmente
+  modal.open();
+});
 
     // Debug info en theme editor
     if (isThemeEditor() || isPreviewMode()) {

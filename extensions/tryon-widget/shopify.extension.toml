@@ -1,3 +1,9 @@
+api_version = "2024-07"
 name = "tryon-widget"
-type = "theme"
 uid = "fab79224-defc-313f-e050-ff995f41040b91922f9b"
+type = "theme"
+
+[[extensions]]
+type = "theme"
+name = "tryon-widget"
+handle = "tryon-widget"
