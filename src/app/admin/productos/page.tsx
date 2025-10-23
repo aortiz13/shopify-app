@@ -8,6 +8,11 @@ import React, {
   useRef,
   useState,
 } from "react";
+import {
+  decodeHostShop,
+  rememberShopForHost,
+  getStoredShopForHost,
+} from "@/lib/utils/shopParams";
 
 type ProductImage = {
   url?: string | null;
@@ -81,67 +86,6 @@ const parseErrorPayload = (raw: string | null | undefined): string | null => {
   }
 
   return raw;
-};
-
-const STORAGE_PREFIX = "tryon-shop-for-host::";
-
-const rememberShopForHost = (host: string, shop: string) => {
-  if (!host || !shop) return;
-
-  try {
-    if (typeof window !== "undefined" && window.sessionStorage) {
-      window.sessionStorage.setItem(`${STORAGE_PREFIX}${host}`, shop);
-    }
-  } catch (error) {
-    console.warn("No se pudo guardar la tienda en sessionStorage", error);
-  }
-};
-
-const getStoredShopForHost = (host: string): string | null => {
-  if (!host) return null;
-
-  try {
-    if (typeof window !== "undefined" && window.sessionStorage) {
-      const value = window.sessionStorage.getItem(`${STORAGE_PREFIX}${host}`);
-      return value ? value : null;
-    }
-  } catch (error) {
-    console.warn("No se pudo leer la tienda desde sessionStorage", error);
-  }
-
-  return null;
-};
-
-const decodeHostShop = (hostParam: string): string | null => {
-  try {
-    const normalized = hostParam.replace(/-/g, "+").replace(/_/g, "/");
-    const padding =
-      normalized.length % 4 === 0
-        ? ""
-        : "=".repeat(4 - (normalized.length % 4));
-    const decoded = window.atob(`${normalized}${padding}`);
-
-    const directDomain = decoded.match(/([\w-]+\.myshopify\.com)/);
-    if (directDomain?.[1]) {
-      return directDomain[1];
-    }
-
-    const storeSegment = decoded.match(/\/store\/([^/]+)/);
-    if (storeSegment?.[1]) {
-      const slug = storeSegment[1];
-      return slug.endsWith(".myshopify.com") ? slug : `${slug}.myshopify.com`;
-    }
-
-    const legacySegment = decoded.match(/\/([^/]+)\/app\//);
-    if (legacySegment?.[1]) {
-      const slug = legacySegment[1];
-      return slug.endsWith(".myshopify.com") ? slug : `${slug}.myshopify.com`;
-    }
-  } catch (error) {
-    console.warn("No se pudo decodificar el parámetro host", error);
-  }
-
-  return null;
 };
 
 export default function AdminLanding() {
