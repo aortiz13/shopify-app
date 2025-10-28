@@ -27,7 +27,7 @@ model TryOnLog {
   variantId   String?
   customerId  String?
   action      String
-  metadata    Json?
+  metadata    String?
   createdAt   DateTime @default(now())
 
   @@index([shop, productId])

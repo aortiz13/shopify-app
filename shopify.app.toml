@@ -1,7 +1,6 @@
-# shopify.app.toml
 name = "Probador Virtual"
-client_id = "a0f342f67ced139f8f87857810c533ce"                     # = SHOPIFY_API_KEY de tu .env.local
-application_url = "https://accepted-moore-jim-technology.trycloudflare.com"
+client_id = "a0f342f67ced139f8f87857810c533ce"
+application_url = "https://shopify-dev.adrian-ortiz.com"
 embedded = true
 
 [access_scopes]
@@ -9,19 +8,18 @@ scopes = "read_products,write_products"
 
 [auth]
 redirect_urls = [
-  "https://accepted-moore-jim-technology.trycloudflare.com/auth/callback",
-  "https://accepted-moore-jim-technology.trycloudflare.com/api/auth/callback/shopify"
+  "https://shopify-dev.adrian-ortiz.com/auth/callback",
+  "https://shopify-dev.adrian-ortiz.com/api/auth/callback/shopify"
 ]
 
 [webhooks]
 api_version = "2025-01"
 
 [build]
-# Si NO quieres que el CLI te cambie URLs durante 'shopify app dev', déjalo en false
 automatically_update_urls_on_dev = true
 dev_store_url = "actual-moda-dev.myshopify.com"
 
 [app_proxy]
-url = "https://accepted-moore-jim-technology.trycloudflare.com"
+url = "https://shopify-dev.adrian-ortiz.com"
 subpath = "tryon"
 prefix = "apps"
