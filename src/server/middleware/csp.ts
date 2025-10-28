@@ -14,6 +14,9 @@ export async function cspMiddleware(ctx: Context, next: Next) {
   // Logging unificado
   console.log("➡️", ctx.method, ctx.path);
 
+  // Obtener el HOST actual (permite usar túneles temporales)
+  const appHost = process.env.HOST || "https://app.adrian-ortiz.com";
+
   // CSP más permisivo para permitir embedding desde storefronts
   const dynamicCSP = [
     "default-src 'self' https:",
@@ -23,7 +26,7 @@ export async function cspMiddleware(ctx: Context, next: Next) {
     "font-src 'self' data: https:",
     "connect-src 'self' https: wss: ws:",
     "frame-ancestors https://*.myshopify.com https://admin.shopify.com", // Permite admin Y storefronts
-    "frame-src https://admin.shopify.com https://*.myshopify.com https://app.adrian-ortiz.com",
+    `frame-src https://admin.shopify.com https://*.myshopify.com ${appHost}`,
   ].join("; ");
 
   ctx.set("Content-Security-Policy", dynamicCSP);
