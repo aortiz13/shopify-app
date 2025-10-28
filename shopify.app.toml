@@ -1,7 +1,7 @@
 # shopify.app.toml
 name = "Probador Virtual"
 client_id = "a0f342f67ced139f8f87857810c533ce"                     # = SHOPIFY_API_KEY de tu .env.local
-application_url = "https://app.adrian-ortiz.com"
+application_url = "https://accepted-moore-jim-technology.trycloudflare.com"
 embedded = true
 
 [access_scopes]
@@ -9,8 +9,8 @@ scopes = "read_products,write_products"
 
 [auth]
 redirect_urls = [
-  "https://app.adrian-ortiz.com/auth/callback",
-  "https://app.adrian-ortiz.com/api/auth/callback/shopify"
+  "https://accepted-moore-jim-technology.trycloudflare.com/auth/callback",
+  "https://accepted-moore-jim-technology.trycloudflare.com/api/auth/callback/shopify"
 ]
 
 [webhooks]
@@ -22,6 +22,6 @@ automatically_update_urls_on_dev = true
 dev_store_url = "actual-moda-dev.myshopify.com"
 
 [app_proxy]
-url = "https://app.adrian-ortiz.com"
+url = "https://accepted-moore-jim-technology.trycloudflare.com"
 subpath = "tryon"
 prefix = "apps"
