@@ -109,6 +109,17 @@ app.use(
   }),
 );
 
+// NextAuth API routes (debe ir ANTES de las rutas custom de /api/auth)
+// Esto maneja /api/auth/session, /api/auth/signin, /api/auth/signout, etc.
+app.use(
+  proxy(/^\/api\/auth\/(session|signin|signout|csrf|providers)(?:\/.*)?$/, {
+    target: NEXT_TARGET,
+    changeOrigin: true,
+    logs: true,
+    events: proxyEvents,
+  }),
+);
+
 // /admin (dashboard embebido) y todo lo que cuelga
 app.use(
   proxy(/^\/admin(?:\/.*)?$/, {
@@ -142,6 +153,25 @@ app.use(
 // Fuentes de Next 15 (Geist)
 app.use(
   proxy(/^\/__nextjs_font(?:\/.*)?$/, {
+    target: NEXT_TARGET,
+    changeOrigin: true,
+    logs: true,
+    events: proxyEvents,
+  }),
+);
+
+// Next.js development endpoints (error stack frames)
+app.use(
+  proxy("/__nextjs_original-stack-frame", {
+    target: NEXT_TARGET,
+    changeOrigin: true,
+    logs: true,
+    events: proxyEvents,
+  }),
+);
+
+app.use(
+  proxy("/__nextjs_original-stack-frames", {
     target: NEXT_TARGET,
     changeOrigin: true,
     logs: true,
